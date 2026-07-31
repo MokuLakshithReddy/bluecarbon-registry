@@ -5,6 +5,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { anchorVerifiedRecord } from "./blockchain.server";
+import type { PublicProjectPayload, PublicProjectSummary } from "./public-types";
 
 export const DEMO_ACCOUNTS = [
   {
@@ -54,25 +55,22 @@ async function getAdmin() {
 }
 
 /** Public (no auth) verification lookup — PII is stripped by the database function. */
-export async function fetchPublicProject(code: string) {
+export async function fetchPublicProject(code: string): Promise<PublicProjectPayload | null> {
   const client = publicServerClient();
   const { data, error } = await client.rpc("get_public_project", { _code: code });
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const payload = data as {
-    project: Record<string, unknown>;
-    evidence: { file_url?: string | null }[];
-  };
+  const payload = data as unknown as PublicProjectPayload;
   const admin = await getAdmin();
   await signStoredUrls(admin, payload.evidence ?? []);
   return payload;
 }
 
-export async function fetchPublicProjects() {
+export async function fetchPublicProjects(): Promise<PublicProjectSummary[]> {
   const client = publicServerClient();
   const { data, error } = await client.rpc("list_public_projects");
   if (error) throw new Error(error.message);
-  return (data ?? []) as unknown[];
+  return (data ?? []) as unknown as PublicProjectSummary[];
 }
 
 /** Signed URLs for evidence files, for authenticated viewers. */
