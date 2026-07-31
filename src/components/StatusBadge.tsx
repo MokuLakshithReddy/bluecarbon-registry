@@ -36,7 +36,7 @@ export function RiskBadge({ level, className }: { level: string; className?: str
     <span
       className={cn(
         "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide",
-        RISK_STYLES[level] ?? RISK_STYLES.LOW,
+        RISK_STYLES[level] ?? RISK_STYLES["LOW"],
         className,
       )}
     >

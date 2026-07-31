@@ -70,8 +70,8 @@ export default function ProjectMap({
             center={[marker.latitude, marker.longitude]}
             radius={9}
             pathOptions={{
-              color: STATUS_COLOR[marker.status] ?? STATUS_COLOR.DRAFT,
-              fillColor: STATUS_COLOR[marker.status] ?? STATUS_COLOR.DRAFT,
+              color: STATUS_COLOR[marker.status] ?? STATUS_COLOR["DRAFT"],
+              fillColor: STATUS_COLOR[marker.status] ?? STATUS_COLOR["DRAFT"],
               fillOpacity: 0.65,
               weight: 2,
             }}
