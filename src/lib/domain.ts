@@ -1,0 +1,186 @@
+/**
+ * BlueCarbon MRV Registry — shared domain model.
+ *
+ * IMPORTANT PRODUCT PRINCIPLE
+ * This system records ESTIMATED and VERIFIED CARBON IMPACT (tCO₂e).
+ * It does NOT issue carbon credits. See CARBON_DISCLAIMER.
+ */
+
+export const CARBON_DISCLAIMER =
+  "Carbon impact shown by this MVP is an estimated/verified project impact value for demonstration. Actual carbon-credit issuance requires an approved methodology, authorized verification and the applicable regulatory/registry process.";
+
+export type ProjectStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "UNDER_REVIEW"
+  | "CORRECTION_REQUIRED"
+  | "VERIFIED"
+  | "REJECTED";
+
+export type Ecosystem = "MANGROVE" | "SEAGRASS" | "SALT_MARSH" | "COASTAL_WETLAND" | "OTHER";
+
+export const STATUS_LABEL: Record<ProjectStatus, string> = {
+  DRAFT: "Draft",
+  SUBMITTED: "Submitted",
+  UNDER_REVIEW: "Under Review",
+  CORRECTION_REQUIRED: "Correction Required",
+  VERIFIED: "Verified",
+  REJECTED: "Rejected",
+};
+
+export const ECOSYSTEM_LABEL: Record<Ecosystem, string> = {
+  MANGROVE: "Mangrove",
+  SEAGRASS: "Seagrass",
+  SALT_MARSH: "Salt Marsh",
+  COASTAL_WETLAND: "Coastal Wetland",
+  OTHER: "Other",
+};
+
+export const ECOSYSTEM_OPTIONS = Object.keys(ECOSYSTEM_LABEL) as Ecosystem[];
+
+export const EVIDENCE_TYPES = [
+  "FIELD_PHOTO",
+  "DOCUMENT",
+  "SURVEY_REPORT",
+  "DRONE_IMAGERY",
+  "OTHER",
+] as const;
+
+export const EVIDENCE_TYPE_LABEL: Record<string, string> = {
+  FIELD_PHOTO: "Field Photograph",
+  DOCUMENT: "Document",
+  SURVEY_REPORT: "Survey Report",
+  DRONE_IMAGERY: "Drone Imagery",
+  OTHER: "Other Evidence",
+};
+
+export const INDIAN_COASTAL_STATES = [
+  "Andhra Pradesh",
+  "Goa",
+  "Gujarat",
+  "Karnataka",
+  "Kerala",
+  "Maharashtra",
+  "Odisha",
+  "Tamil Nadu",
+  "West Bengal",
+  "Puducherry",
+  "Daman & Diu",
+  "Andaman & Nicobar Islands",
+  "Lakshadweep",
+];
+
+export interface ProjectRow {
+  id: string;
+  project_code: string;
+  owner_id: string | null;
+  owner_email: string;
+  name: string;
+  organization: string | null;
+  description: string | null;
+  owner_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  ecosystem: Ecosystem;
+  state: string | null;
+  district: string | null;
+  coastal_area: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  area_hectares: number | null;
+  restoration_start: string | null;
+  restoration_end: string | null;
+  restoration_method: string | null;
+  species: string | null;
+  plant_count: number | null;
+  survival_rate: number | null;
+  estimated_carbon: number | null;
+  verified_carbon: number | null;
+  notes: string | null;
+  status: ProjectStatus;
+  submitted_at: string | null;
+  verified_at: string | null;
+  verifier_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvidenceRow {
+  id: string;
+  project_id: string;
+  evidence_code: string | null;
+  file_name: string;
+  file_url: string | null;
+  file_hash: string | null;
+  file_size: number | null;
+  evidence_type: string;
+  latitude: number | null;
+  longitude: number | null;
+  capture_date: string | null;
+  uploaded_by_email: string | null;
+  review_status: string;
+  reviewer_comment: string | null;
+  is_public: boolean;
+  created_at: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * DEMONSTRATION carbon coefficients.
+ * These are illustrative values for the MVP only — NOT an approved
+ * scientific methodology. The engine is isolated here so an approved
+ * methodology (e.g. VM0033 / IPCC wetlands supplement) can replace it.
+ * ------------------------------------------------------------------ */
+export const DEMO_CARBON_COEFFICIENTS: Record<Ecosystem, number> = {
+  MANGROVE: 12.4,
+  SEAGRASS: 6.8,
+  SALT_MARSH: 8.1,
+  COASTAL_WETLAND: 7.2,
+  OTHER: 5.0,
+};
+
+export const CARBON_METHODOLOGY_ID = "DEMONSTRATION_COEFFICIENTS_V1";
+
+/** Estimated carbon impact in tCO₂e over the restoration period (demo model). */
+export function estimateCarbonImpact(input: {
+  ecosystem: Ecosystem;
+  area_hectares?: number | null;
+  restoration_start?: string | null;
+  restoration_end?: string | null;
+  survival_rate?: number | null;
+}): number {
+  const area = Number(input.area_hectares ?? 0);
+  if (!area || area <= 0) return 0;
+  const coefficient = DEMO_CARBON_COEFFICIENTS[input.ecosystem] ?? 5;
+  let years = 1;
+  if (input.restoration_start && input.restoration_end) {
+    const start = new Date(input.restoration_start).getTime();
+    const end = new Date(input.restoration_end).getTime();
+    if (end > start) years = Math.max(1, (end - start) / (1000 * 60 * 60 * 24 * 365.25));
+  }
+  const survival = input.survival_rate == null ? 80 : Math.min(100, Math.max(0, input.survival_rate));
+  const value = area * coefficient * years * (survival / 100);
+  return Math.round(value);
+}
+
+export function formatTco2e(value?: number | null): string {
+  if (value == null) return "—";
+  return `${Number(value).toLocaleString("en-IN")} tCO₂e`;
+}
+
+export function formatNumber(value?: number | null, suffix = ""): string {
+  if (value == null) return "—";
+  return `${Number(value).toLocaleString("en-IN")}${suffix}`;
+}
+
+export function formatDate(value?: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+export function shortHash(value?: string | null, head = 6, tail = 4): string {
+  if (!value) return "—";
+  if (value.length <= head + tail + 3) return value;
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
