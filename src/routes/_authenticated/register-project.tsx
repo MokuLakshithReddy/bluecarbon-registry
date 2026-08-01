@@ -70,8 +70,10 @@ function RegisterProjectPage() {
   const area = Number(form.area_hectares) || 0;
   const estimate = estimateCarbonImpact({
     ecosystem: form.ecosystem,
-    areaHectares: area,
-    survivalRate: Number(form.survival_rate) || null,
+    area_hectares: area,
+    restoration_start: form.restoration_start || null,
+    restoration_end: form.restoration_end || null,
+    survival_rate: Number(form.survival_rate) || null,
   });
 
   const lat = Number(form.latitude);
@@ -116,7 +118,7 @@ function RegisterProjectPage() {
                 species: form.species.trim() || null,
                 plant_count: Number(form.plant_count) || null,
                 survival_rate: Number(form.survival_rate) || null,
-                estimated_carbon: estimate.tco2e || null,
+                estimated_carbon: estimate || null,
                 status: "SUBMITTED",
                 submitted_at: new Date().toISOString(),
               })
@@ -317,7 +319,7 @@ function RegisterProjectPage() {
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Indicative carbon estimate
             </p>
-            <p className="mt-3 font-display text-2xl font-semibold">{formatTco2e(estimate.tco2e)}</p>
+            <p className="mt-3 font-display text-2xl font-semibold">{formatTco2e(estimate)}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Demonstration coefficient for {ECOSYSTEM_LABEL[form.ecosystem]}. The final Verified Carbon Impact
               is confirmed by an NCCR verifier.
