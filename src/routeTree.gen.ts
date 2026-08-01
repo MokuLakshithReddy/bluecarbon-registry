@@ -11,8 +11,26 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as HowItWorksRouteImport } from './routes/how-it-works'
+import { Route as MapRouteImport } from './routes/map'
+import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedAuditLogsRouteImport } from './routes/_authenticated/audit-logs'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedEvidenceRouteImport } from './routes/_authenticated/evidence'
+import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authenticated/my-projects'
+import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedQueueRouteImport } from './routes/_authenticated/queue'
+import { Route as AuthenticatedRegisterProjectRouteImport } from './routes/_authenticated/register-project'
+import { Route as AuthenticatedRegistryRouteImport } from './routes/_authenticated/registry'
+import { Route as AuthenticatedRegistryMapRouteImport } from './routes/_authenticated/registry-map'
+import { Route as AuthenticatedVerifierRouteImport } from './routes/_authenticated/verifier'
+import { Route as VerifyIndexRouteImport } from './routes/verify.index'
+import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
+import { Route as AuthenticatedReviewIdRouteImport } from './routes/_authenticated/review/$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -23,47 +41,264 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
   getParentRoute: () => rootRouteImport,
+} as any)
+const HowItWorksRoute = HowItWorksRouteImport.update({
+  id: '/how-it-works',
+  path: '/how-it-works',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MapRoute = MapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAuditLogsRoute = AuthenticatedAuditLogsRouteImport.update({
+  id: '/audit-logs',
+  path: '/audit-logs',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedEvidenceRoute = AuthenticatedEvidenceRouteImport.update({
+  id: '/evidence',
+  path: '/evidence',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMyProjectsRoute = AuthenticatedMyProjectsRouteImport.update({
+  id: '/my-projects',
+  path: '/my-projects',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedNotificationsRoute =
+  AuthenticatedNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedQueueRoute = AuthenticatedQueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedRegisterProjectRoute =
+  AuthenticatedRegisterProjectRouteImport.update({
+    id: '/register-project',
+    path: '/register-project',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRegistryRoute = AuthenticatedRegistryRouteImport.update({
+  id: '/registry',
+  path: '/registry',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedRegistryMapRoute =
+  AuthenticatedRegistryMapRouteImport.update({
+    id: '/registry-map',
+    path: '/registry-map',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedVerifierRoute = AuthenticatedVerifierRouteImport.update({
+  id: '/verifier',
+  path: '/verifier',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const VerifyIndexRoute = VerifyIndexRouteImport.update({
+  id: '/verify/',
+  path: '/verify/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyCodeRoute = VerifyCodeRouteImport.update({
+  id: '/verify/$code',
+  path: '/verify/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedReviewIdRoute = AuthenticatedReviewIdRouteImport.update({
+  id: '/review/$id',
+  path: '/review/$id',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/map': typeof MapRoute
+  '/projects': typeof ProjectsRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/audit-logs': typeof AuthenticatedAuditLogsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/evidence': typeof AuthenticatedEvidenceRoute
+  '/my-projects': typeof AuthenticatedMyProjectsRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
+  '/profile': typeof AuthenticatedProfileRoute
+  '/queue': typeof AuthenticatedQueueRoute
+  '/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/registry': typeof AuthenticatedRegistryRoute
+  '/registry-map': typeof AuthenticatedRegistryMapRoute
+  '/verifier': typeof AuthenticatedVerifierRoute
+  '/verify/$code': typeof VerifyCodeRoute
+  '/verify/': typeof VerifyIndexRoute
+  '/review/$id': typeof AuthenticatedReviewIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/map': typeof MapRoute
+  '/projects': typeof ProjectsRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/audit-logs': typeof AuthenticatedAuditLogsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/evidence': typeof AuthenticatedEvidenceRoute
+  '/my-projects': typeof AuthenticatedMyProjectsRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
+  '/profile': typeof AuthenticatedProfileRoute
+  '/queue': typeof AuthenticatedQueueRoute
+  '/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/registry': typeof AuthenticatedRegistryRoute
+  '/registry-map': typeof AuthenticatedRegistryMapRoute
+  '/verifier': typeof AuthenticatedVerifierRoute
+  '/verify/$code': typeof VerifyCodeRoute
+  '/verify': typeof VerifyIndexRoute
+  '/review/$id': typeof AuthenticatedReviewIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/map': typeof MapRoute
+  '/projects': typeof ProjectsRoute
+  '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
+  '/_authenticated/audit-logs': typeof AuthenticatedAuditLogsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/evidence': typeof AuthenticatedEvidenceRoute
+  '/_authenticated/my-projects': typeof AuthenticatedMyProjectsRoute
+  '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/queue': typeof AuthenticatedQueueRoute
+  '/_authenticated/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/_authenticated/registry': typeof AuthenticatedRegistryRoute
+  '/_authenticated/registry-map': typeof AuthenticatedRegistryMapRoute
+  '/_authenticated/verifier': typeof AuthenticatedVerifierRoute
+  '/verify/$code': typeof VerifyCodeRoute
+  '/verify/': typeof VerifyIndexRoute
+  '/_authenticated/review/$id': typeof AuthenticatedReviewIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/dashboard'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/auth'
+    | '/how-it-works'
+    | '/map'
+    | '/projects'
+    | '/analytics'
+    | '/audit-logs'
+    | '/dashboard'
+    | '/evidence'
+    | '/my-projects'
+    | '/notifications'
+    | '/profile'
+    | '/queue'
+    | '/register-project'
+    | '/registry'
+    | '/registry-map'
+    | '/verifier'
+    | '/verify/$code'
+    | '/verify/'
+    | '/review/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/dashboard'
+  to:
+    | '/'
+    | '/about'
+    | '/auth'
+    | '/how-it-works'
+    | '/map'
+    | '/projects'
+    | '/analytics'
+    | '/audit-logs'
+    | '/dashboard'
+    | '/evidence'
+    | '/my-projects'
+    | '/notifications'
+    | '/profile'
+    | '/queue'
+    | '/register-project'
+    | '/registry'
+    | '/registry-map'
+    | '/verifier'
+    | '/verify/$code'
+    | '/verify'
+    | '/review/$id'
   id:
-    '__root__' | '/' | '/_authenticated' | '/auth' | '/_authenticated/dashboard'
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/about'
+    | '/auth'
+    | '/how-it-works'
+    | '/map'
+    | '/projects'
+    | '/_authenticated/analytics'
+    | '/_authenticated/audit-logs'
+    | '/_authenticated/dashboard'
+    | '/_authenticated/evidence'
+    | '/_authenticated/my-projects'
+    | '/_authenticated/notifications'
+    | '/_authenticated/profile'
+    | '/_authenticated/queue'
+    | '/_authenticated/register-project'
+    | '/_authenticated/registry'
+    | '/_authenticated/registry-map'
+    | '/_authenticated/verifier'
+    | '/verify/$code'
+    | '/verify/'
+    | '/_authenticated/review/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AboutRoute: typeof AboutRoute
   AuthRoute: typeof AuthRoute
+  HowItWorksRoute: typeof HowItWorksRoute
+  MapRoute: typeof MapRoute
+  ProjectsRoute: typeof ProjectsRoute
+  VerifyCodeRoute: typeof VerifyCodeRoute
+  VerifyIndexRoute: typeof VerifyIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,12 +317,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/how-it-works': {
+      id: '/how-it-works'
+      path: '/how-it-works'
+      fullPath: '/how-it-works'
+      preLoaderRoute: typeof HowItWorksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/map': {
+      id: '/map'
+      path: '/map'
+      fullPath: '/map'
+      preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/analytics': {
+      id: '/_authenticated/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/audit-logs': {
+      id: '/_authenticated/audit-logs'
+      path: '/audit-logs'
+      fullPath: '/audit-logs'
+      preLoaderRoute: typeof AuthenticatedAuditLogsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
@@ -96,15 +373,123 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/evidence': {
+      id: '/_authenticated/evidence'
+      path: '/evidence'
+      fullPath: '/evidence'
+      preLoaderRoute: typeof AuthenticatedEvidenceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/my-projects': {
+      id: '/_authenticated/my-projects'
+      path: '/my-projects'
+      fullPath: '/my-projects'
+      preLoaderRoute: typeof AuthenticatedMyProjectsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/notifications': {
+      id: '/_authenticated/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/queue': {
+      id: '/_authenticated/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof AuthenticatedQueueRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/register-project': {
+      id: '/_authenticated/register-project'
+      path: '/register-project'
+      fullPath: '/register-project'
+      preLoaderRoute: typeof AuthenticatedRegisterProjectRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/registry': {
+      id: '/_authenticated/registry'
+      path: '/registry'
+      fullPath: '/registry'
+      preLoaderRoute: typeof AuthenticatedRegistryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/registry-map': {
+      id: '/_authenticated/registry-map'
+      path: '/registry-map'
+      fullPath: '/registry-map'
+      preLoaderRoute: typeof AuthenticatedRegistryMapRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/verifier': {
+      id: '/_authenticated/verifier'
+      path: '/verifier'
+      fullPath: '/verifier'
+      preLoaderRoute: typeof AuthenticatedVerifierRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/verify/': {
+      id: '/verify/'
+      path: '/verify'
+      fullPath: '/verify/'
+      preLoaderRoute: typeof VerifyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify/$code': {
+      id: '/verify/$code'
+      path: '/verify/$code'
+      fullPath: '/verify/$code'
+      preLoaderRoute: typeof VerifyCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/review/$id': {
+      id: '/_authenticated/review/$id'
+      path: '/review/$id'
+      fullPath: '/review/$id'
+      preLoaderRoute: typeof AuthenticatedReviewIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
+  AuthenticatedAuditLogsRoute: typeof AuthenticatedAuditLogsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedEvidenceRoute: typeof AuthenticatedEvidenceRoute
+  AuthenticatedMyProjectsRoute: typeof AuthenticatedMyProjectsRoute
+  AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedQueueRoute: typeof AuthenticatedQueueRoute
+  AuthenticatedRegisterProjectRoute: typeof AuthenticatedRegisterProjectRoute
+  AuthenticatedRegistryRoute: typeof AuthenticatedRegistryRoute
+  AuthenticatedRegistryMapRoute: typeof AuthenticatedRegistryMapRoute
+  AuthenticatedVerifierRoute: typeof AuthenticatedVerifierRoute
+  AuthenticatedReviewIdRoute: typeof AuthenticatedReviewIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
+  AuthenticatedAuditLogsRoute: AuthenticatedAuditLogsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedEvidenceRoute: AuthenticatedEvidenceRoute,
+  AuthenticatedMyProjectsRoute: AuthenticatedMyProjectsRoute,
+  AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
+  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedQueueRoute: AuthenticatedQueueRoute,
+  AuthenticatedRegisterProjectRoute: AuthenticatedRegisterProjectRoute,
+  AuthenticatedRegistryRoute: AuthenticatedRegistryRoute,
+  AuthenticatedRegistryMapRoute: AuthenticatedRegistryMapRoute,
+  AuthenticatedVerifierRoute: AuthenticatedVerifierRoute,
+  AuthenticatedReviewIdRoute: AuthenticatedReviewIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -113,18 +498,14 @@ const AuthenticatedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AboutRoute: AboutRoute,
   AuthRoute: AuthRoute,
+  HowItWorksRoute: HowItWorksRoute,
+  MapRoute: MapRoute,
+  ProjectsRoute: ProjectsRoute,
+  VerifyCodeRoute: VerifyCodeRoute,
+  VerifyIndexRoute: VerifyIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
