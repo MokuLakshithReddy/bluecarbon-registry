@@ -17,6 +17,7 @@ import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedEvidenceRouteImport } from './routes/_authenticated/evidence'
 import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authenticated/my-projects'
 import { Route as AuthenticatedRegisterProjectRouteImport } from './routes/_authenticated/register-project'
 import { Route as VerifyIndexRouteImport } from './routes/verify.index'
@@ -61,6 +62,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedEvidenceRoute = AuthenticatedEvidenceRouteImport.update({
+  id: '/evidence',
+  path: '/evidence',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedMyProjectsRoute = AuthenticatedMyProjectsRouteImport.update({
   id: '/my-projects',
   path: '/my-projects',
@@ -91,6 +97,7 @@ export interface FileRoutesByFullPath {
   '/map': typeof MapRoute
   '/projects': typeof ProjectsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/evidence': typeof AuthenticatedEvidenceRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/register-project': typeof AuthenticatedRegisterProjectRoute
   '/verify/$code': typeof VerifyCodeRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/map': typeof MapRoute
   '/projects': typeof ProjectsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/evidence': typeof AuthenticatedEvidenceRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/register-project': typeof AuthenticatedRegisterProjectRoute
   '/verify/$code': typeof VerifyCodeRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/map': typeof MapRoute
   '/projects': typeof ProjectsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/evidence': typeof AuthenticatedEvidenceRoute
   '/_authenticated/my-projects': typeof AuthenticatedMyProjectsRoute
   '/_authenticated/register-project': typeof AuthenticatedRegisterProjectRoute
   '/verify/$code': typeof VerifyCodeRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/map'
     | '/projects'
     | '/dashboard'
+    | '/evidence'
     | '/my-projects'
     | '/register-project'
     | '/verify/$code'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/map'
     | '/projects'
     | '/dashboard'
+    | '/evidence'
     | '/my-projects'
     | '/register-project'
     | '/verify/$code'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/map'
     | '/projects'
     | '/_authenticated/dashboard'
+    | '/_authenticated/evidence'
     | '/_authenticated/my-projects'
     | '/_authenticated/register-project'
     | '/verify/$code'
@@ -237,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/evidence': {
+      id: '/_authenticated/evidence'
+      path: '/evidence'
+      fullPath: '/evidence'
+      preLoaderRoute: typeof AuthenticatedEvidenceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/my-projects': {
       id: '/_authenticated/my-projects'
       path: '/my-projects'
@@ -270,12 +289,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedEvidenceRoute: typeof AuthenticatedEvidenceRoute
   AuthenticatedMyProjectsRoute: typeof AuthenticatedMyProjectsRoute
   AuthenticatedRegisterProjectRoute: typeof AuthenticatedRegisterProjectRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedEvidenceRoute: AuthenticatedEvidenceRoute,
   AuthenticatedMyProjectsRoute: AuthenticatedMyProjectsRoute,
   AuthenticatedRegisterProjectRoute: AuthenticatedRegisterProjectRoute,
 }
