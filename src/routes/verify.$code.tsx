@@ -133,7 +133,7 @@ function PublicVerifyPage() {
           <StatCard
             label="Location"
             value={[project.district, project.state].filter(Boolean).join(", ") || "—"}
-            hint={project.coastal_area ?? undefined}
+            hint={project.coastal_area ?? "Coastal restoration site"}
             tone="ocean"
             icon={<MapPin className="size-4" />}
           />
