@@ -22,6 +22,7 @@ import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authentic
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedRegisterProjectRouteImport } from './routes/_authenticated/register-project'
+import { Route as AuthenticatedVerifierRouteImport } from './routes/_authenticated/verifier'
 import { Route as VerifyIndexRouteImport } from './routes/verify.index'
 import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
 
@@ -91,6 +92,11 @@ const AuthenticatedRegisterProjectRoute =
     path: '/register-project',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedVerifierRoute = AuthenticatedVerifierRouteImport.update({
+  id: '/verifier',
+  path: '/verifier',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const VerifyIndexRoute = VerifyIndexRouteImport.update({
   id: '/verify/',
   path: '/verify/',
@@ -115,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
 }
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify': typeof VerifyIndexRoute
 }
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/_authenticated/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
 }
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/profile'
     | '/register-project'
+    | '/verifier'
     | '/verify/$code'
     | '/verify/'
   fileRoutesByTo: FileRoutesByTo
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/profile'
     | '/register-project'
+    | '/verifier'
     | '/verify/$code'
     | '/verify'
   id:
@@ -200,6 +211,7 @@ export interface FileRouteTypes {
     | '/_authenticated/notifications'
     | '/_authenticated/profile'
     | '/_authenticated/register-project'
+    | '/_authenticated/verifier'
     | '/verify/$code'
     | '/verify/'
   fileRoutesById: FileRoutesById
@@ -309,6 +321,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRegisterProjectRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/verifier': {
+      id: '/_authenticated/verifier'
+      path: '/verifier'
+      fullPath: '/verifier'
+      preLoaderRoute: typeof AuthenticatedVerifierRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/verify/': {
       id: '/verify/'
       path: '/verify'
@@ -333,6 +352,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedRegisterProjectRoute: typeof AuthenticatedRegisterProjectRoute
+  AuthenticatedVerifierRoute: typeof AuthenticatedVerifierRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -342,6 +362,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedRegisterProjectRoute: AuthenticatedRegisterProjectRoute,
+  AuthenticatedVerifierRoute: AuthenticatedVerifierRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

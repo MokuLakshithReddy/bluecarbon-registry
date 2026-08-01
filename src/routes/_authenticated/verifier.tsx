@@ -45,7 +45,7 @@ function VerifierDashboard() {
 
   const submitted = projects.filter((p) => p.status === "SUBMITTED");
   const underReview = projects.filter((p) => p.status === "UNDER_REVIEW");
-  const corrections = projects.filter((p) => p.status === "NEEDS_CORRECTION");
+  const corrections = projects.filter((p) => p.status === "CORRECTION_REQUIRED");
   const verified = projects.filter((p) => p.status === "VERIFIED");
   const carbon = verified.reduce((sum, p) => sum + (p.verified_carbon ?? 0), 0);
 
@@ -74,7 +74,7 @@ function VerifierDashboard() {
         <StatCard
           label="Correction requested"
           value={corrections.length}
-          tone="amber"
+          tone="warning"
           icon={<TriangleAlert className="size-4" />}
         />
         <StatCard
