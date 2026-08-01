@@ -23,7 +23,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "Register, monitor, verify and publicly prove blue-carbon restoration outcomes across India's coastline.",
+          "A digital MRV and registry system for India's blue-carbon restoration projects: field evidence, automated validation, NCCR verification, tamper-evident records and Verified Carbon Impact in tCO₂e.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
