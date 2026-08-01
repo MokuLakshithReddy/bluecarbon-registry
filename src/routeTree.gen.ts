@@ -16,12 +16,17 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedAuditLogsRouteImport } from './routes/_authenticated/audit-logs'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedEvidenceRouteImport } from './routes/_authenticated/evidence'
 import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authenticated/my-projects'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedQueueRouteImport } from './routes/_authenticated/queue'
 import { Route as AuthenticatedRegisterProjectRouteImport } from './routes/_authenticated/register-project'
+import { Route as AuthenticatedRegistryRouteImport } from './routes/_authenticated/registry'
+import { Route as AuthenticatedRegistryMapRouteImport } from './routes/_authenticated/registry-map'
 import { Route as AuthenticatedVerifierRouteImport } from './routes/_authenticated/verifier'
 import { Route as VerifyIndexRouteImport } from './routes/verify.index'
 import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
@@ -60,6 +65,16 @@ const ProjectsRoute = ProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAuditLogsRoute = AuthenticatedAuditLogsRouteImport.update({
+  id: '/audit-logs',
+  path: '/audit-logs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -86,10 +101,26 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedQueueRoute = AuthenticatedQueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedRegisterProjectRoute =
   AuthenticatedRegisterProjectRouteImport.update({
     id: '/register-project',
     path: '/register-project',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRegistryRoute = AuthenticatedRegistryRouteImport.update({
+  id: '/registry',
+  path: '/registry',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedRegistryMapRoute =
+  AuthenticatedRegistryMapRouteImport.update({
+    id: '/registry-map',
+    path: '/registry-map',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedVerifierRoute = AuthenticatedVerifierRouteImport.update({
@@ -115,12 +146,17 @@ export interface FileRoutesByFullPath {
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
   '/projects': typeof ProjectsRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/audit-logs': typeof AuthenticatedAuditLogsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/queue': typeof AuthenticatedQueueRoute
   '/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/registry': typeof AuthenticatedRegistryRoute
+  '/registry-map': typeof AuthenticatedRegistryMapRoute
   '/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
@@ -132,12 +168,17 @@ export interface FileRoutesByTo {
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
   '/projects': typeof ProjectsRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/audit-logs': typeof AuthenticatedAuditLogsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/queue': typeof AuthenticatedQueueRoute
   '/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/registry': typeof AuthenticatedRegistryRoute
+  '/registry-map': typeof AuthenticatedRegistryMapRoute
   '/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify': typeof VerifyIndexRoute
@@ -151,12 +192,17 @@ export interface FileRoutesById {
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
   '/projects': typeof ProjectsRoute
+  '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
+  '/_authenticated/audit-logs': typeof AuthenticatedAuditLogsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/evidence': typeof AuthenticatedEvidenceRoute
   '/_authenticated/my-projects': typeof AuthenticatedMyProjectsRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/queue': typeof AuthenticatedQueueRoute
   '/_authenticated/register-project': typeof AuthenticatedRegisterProjectRoute
+  '/_authenticated/registry': typeof AuthenticatedRegistryRoute
+  '/_authenticated/registry-map': typeof AuthenticatedRegistryMapRoute
   '/_authenticated/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
@@ -170,12 +216,17 @@ export interface FileRouteTypes {
     | '/how-it-works'
     | '/map'
     | '/projects'
+    | '/analytics'
+    | '/audit-logs'
     | '/dashboard'
     | '/evidence'
     | '/my-projects'
     | '/notifications'
     | '/profile'
+    | '/queue'
     | '/register-project'
+    | '/registry'
+    | '/registry-map'
     | '/verifier'
     | '/verify/$code'
     | '/verify/'
@@ -187,12 +238,17 @@ export interface FileRouteTypes {
     | '/how-it-works'
     | '/map'
     | '/projects'
+    | '/analytics'
+    | '/audit-logs'
     | '/dashboard'
     | '/evidence'
     | '/my-projects'
     | '/notifications'
     | '/profile'
+    | '/queue'
     | '/register-project'
+    | '/registry'
+    | '/registry-map'
     | '/verifier'
     | '/verify/$code'
     | '/verify'
@@ -205,12 +261,17 @@ export interface FileRouteTypes {
     | '/how-it-works'
     | '/map'
     | '/projects'
+    | '/_authenticated/analytics'
+    | '/_authenticated/audit-logs'
     | '/_authenticated/dashboard'
     | '/_authenticated/evidence'
     | '/_authenticated/my-projects'
     | '/_authenticated/notifications'
     | '/_authenticated/profile'
+    | '/_authenticated/queue'
     | '/_authenticated/register-project'
+    | '/_authenticated/registry'
+    | '/_authenticated/registry-map'
     | '/_authenticated/verifier'
     | '/verify/$code'
     | '/verify/'
@@ -279,6 +340,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/analytics': {
+      id: '/_authenticated/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/audit-logs': {
+      id: '/_authenticated/audit-logs'
+      path: '/audit-logs'
+      fullPath: '/audit-logs'
+      preLoaderRoute: typeof AuthenticatedAuditLogsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -314,11 +389,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/queue': {
+      id: '/_authenticated/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof AuthenticatedQueueRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/register-project': {
       id: '/_authenticated/register-project'
       path: '/register-project'
       fullPath: '/register-project'
       preLoaderRoute: typeof AuthenticatedRegisterProjectRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/registry': {
+      id: '/_authenticated/registry'
+      path: '/registry'
+      fullPath: '/registry'
+      preLoaderRoute: typeof AuthenticatedRegistryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/registry-map': {
+      id: '/_authenticated/registry-map'
+      path: '/registry-map'
+      fullPath: '/registry-map'
+      preLoaderRoute: typeof AuthenticatedRegistryMapRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/verifier': {
@@ -346,22 +442,32 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
+  AuthenticatedAuditLogsRoute: typeof AuthenticatedAuditLogsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEvidenceRoute: typeof AuthenticatedEvidenceRoute
   AuthenticatedMyProjectsRoute: typeof AuthenticatedMyProjectsRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedQueueRoute: typeof AuthenticatedQueueRoute
   AuthenticatedRegisterProjectRoute: typeof AuthenticatedRegisterProjectRoute
+  AuthenticatedRegistryRoute: typeof AuthenticatedRegistryRoute
+  AuthenticatedRegistryMapRoute: typeof AuthenticatedRegistryMapRoute
   AuthenticatedVerifierRoute: typeof AuthenticatedVerifierRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
+  AuthenticatedAuditLogsRoute: AuthenticatedAuditLogsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEvidenceRoute: AuthenticatedEvidenceRoute,
   AuthenticatedMyProjectsRoute: AuthenticatedMyProjectsRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedQueueRoute: AuthenticatedQueueRoute,
   AuthenticatedRegisterProjectRoute: AuthenticatedRegisterProjectRoute,
+  AuthenticatedRegistryRoute: AuthenticatedRegistryRoute,
+  AuthenticatedRegistryMapRoute: AuthenticatedRegistryMapRoute,
   AuthenticatedVerifierRoute: AuthenticatedVerifierRoute,
 }
 
