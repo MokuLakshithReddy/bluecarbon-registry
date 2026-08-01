@@ -18,6 +18,7 @@ import { Route as MapRouteImport } from './routes/map'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authenticated/my-projects'
+import { Route as AuthenticatedRegisterProjectRouteImport } from './routes/_authenticated/register-project'
 import { Route as VerifyIndexRouteImport } from './routes/verify.index'
 import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
 
@@ -65,6 +66,12 @@ const AuthenticatedMyProjectsRoute = AuthenticatedMyProjectsRouteImport.update({
   path: '/my-projects',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedRegisterProjectRoute =
+  AuthenticatedRegisterProjectRouteImport.update({
+    id: '/register-project',
+    path: '/register-project',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const VerifyIndexRoute = VerifyIndexRouteImport.update({
   id: '/verify/',
   path: '/verify/',
@@ -85,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof ProjectsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
+  '/register-project': typeof AuthenticatedRegisterProjectRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
 }
@@ -97,6 +105,7 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
+  '/register-project': typeof AuthenticatedRegisterProjectRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify': typeof VerifyIndexRoute
 }
@@ -111,6 +120,7 @@ export interface FileRoutesById {
   '/projects': typeof ProjectsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/my-projects': typeof AuthenticatedMyProjectsRoute
+  '/_authenticated/register-project': typeof AuthenticatedRegisterProjectRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
 }
@@ -125,6 +135,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/dashboard'
     | '/my-projects'
+    | '/register-project'
     | '/verify/$code'
     | '/verify/'
   fileRoutesByTo: FileRoutesByTo
@@ -137,6 +148,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/dashboard'
     | '/my-projects'
+    | '/register-project'
     | '/verify/$code'
     | '/verify'
   id:
@@ -150,6 +162,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/_authenticated/dashboard'
     | '/_authenticated/my-projects'
+    | '/_authenticated/register-project'
     | '/verify/$code'
     | '/verify/'
   fileRoutesById: FileRoutesById
@@ -231,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMyProjectsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/register-project': {
+      id: '/_authenticated/register-project'
+      path: '/register-project'
+      fullPath: '/register-project'
+      preLoaderRoute: typeof AuthenticatedRegisterProjectRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/verify/': {
       id: '/verify/'
       path: '/verify'
@@ -251,11 +271,13 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedMyProjectsRoute: typeof AuthenticatedMyProjectsRoute
+  AuthenticatedRegisterProjectRoute: typeof AuthenticatedRegisterProjectRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedMyProjectsRoute: AuthenticatedMyProjectsRoute,
+  AuthenticatedRegisterProjectRoute: AuthenticatedRegisterProjectRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
