@@ -30,6 +30,7 @@ import { Route as AuthenticatedRegistryMapRouteImport } from './routes/_authenti
 import { Route as AuthenticatedVerifierRouteImport } from './routes/_authenticated/verifier'
 import { Route as VerifyIndexRouteImport } from './routes/verify.index'
 import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
+import { Route as AuthenticatedReviewIdRouteImport } from './routes/_authenticated/review/$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -138,6 +139,11 @@ const VerifyCodeRoute = VerifyCodeRouteImport.update({
   path: '/verify/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedReviewIdRoute = AuthenticatedReviewIdRouteImport.update({
+  id: '/review/$id',
+  path: '/review/$id',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -160,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
+  '/review/$id': typeof AuthenticatedReviewIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -182,6 +189,7 @@ export interface FileRoutesByTo {
   '/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify': typeof VerifyIndexRoute
+  '/review/$id': typeof AuthenticatedReviewIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/_authenticated/verifier': typeof AuthenticatedVerifierRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/verify/': typeof VerifyIndexRoute
+  '/_authenticated/review/$id': typeof AuthenticatedReviewIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/verifier'
     | '/verify/$code'
     | '/verify/'
+    | '/review/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -252,6 +262,7 @@ export interface FileRouteTypes {
     | '/verifier'
     | '/verify/$code'
     | '/verify'
+    | '/review/$id'
   id:
     | '__root__'
     | '/'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/_authenticated/verifier'
     | '/verify/$code'
     | '/verify/'
+    | '/_authenticated/review/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -438,6 +450,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VerifyCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/review/$id': {
+      id: '/_authenticated/review/$id'
+      path: '/review/$id'
+      fullPath: '/review/$id'
+      preLoaderRoute: typeof AuthenticatedReviewIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -454,6 +473,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRegistryRoute: typeof AuthenticatedRegistryRoute
   AuthenticatedRegistryMapRoute: typeof AuthenticatedRegistryMapRoute
   AuthenticatedVerifierRoute: typeof AuthenticatedVerifierRoute
+  AuthenticatedReviewIdRoute: typeof AuthenticatedReviewIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -469,6 +489,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRegistryRoute: AuthenticatedRegistryRoute,
   AuthenticatedRegistryMapRoute: AuthenticatedRegistryMapRoute,
   AuthenticatedVerifierRoute: AuthenticatedVerifierRoute,
+  AuthenticatedReviewIdRoute: AuthenticatedReviewIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -488,3 +509,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
