@@ -24,6 +24,7 @@ import { Route as AuthenticatedCommunityReviewRouteImport } from './routes/_auth
 import { Route as AuthenticatedCommunityShareRouteImport } from './routes/_authenticated/community-share'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedEvidenceRouteImport } from './routes/_authenticated/evidence'
+import { Route as AuthenticatedMarketplaceInterestsRouteImport } from './routes/_authenticated/marketplace-interests'
 import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authenticated/my-projects'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
@@ -112,6 +113,12 @@ const AuthenticatedEvidenceRoute = AuthenticatedEvidenceRouteImport.update({
   path: '/evidence',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMarketplaceInterestsRoute =
+  AuthenticatedMarketplaceInterestsRouteImport.update({
+    id: '/marketplace-interests',
+    path: '/marketplace-interests',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMyProjectsRoute = AuthenticatedMyProjectsRouteImport.update({
   id: '/my-projects',
   path: '/my-projects',
@@ -186,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/community-share': typeof AuthenticatedCommunityShareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
+  '/marketplace-interests': typeof AuthenticatedMarketplaceInterestsRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -213,6 +221,7 @@ export interface FileRoutesByTo {
   '/community-share': typeof AuthenticatedCommunityShareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
+  '/marketplace-interests': typeof AuthenticatedMarketplaceInterestsRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -242,6 +251,7 @@ export interface FileRoutesById {
   '/_authenticated/community-share': typeof AuthenticatedCommunityShareRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/evidence': typeof AuthenticatedEvidenceRoute
+  '/_authenticated/marketplace-interests': typeof AuthenticatedMarketplaceInterestsRoute
   '/_authenticated/my-projects': typeof AuthenticatedMyProjectsRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
@@ -271,6 +281,7 @@ export interface FileRouteTypes {
     | '/community-share'
     | '/dashboard'
     | '/evidence'
+    | '/marketplace-interests'
     | '/my-projects'
     | '/notifications'
     | '/profile'
@@ -298,6 +309,7 @@ export interface FileRouteTypes {
     | '/community-share'
     | '/dashboard'
     | '/evidence'
+    | '/marketplace-interests'
     | '/my-projects'
     | '/notifications'
     | '/profile'
@@ -326,6 +338,7 @@ export interface FileRouteTypes {
     | '/_authenticated/community-share'
     | '/_authenticated/dashboard'
     | '/_authenticated/evidence'
+    | '/_authenticated/marketplace-interests'
     | '/_authenticated/my-projects'
     | '/_authenticated/notifications'
     | '/_authenticated/profile'
@@ -460,6 +473,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEvidenceRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/marketplace-interests': {
+      id: '/_authenticated/marketplace-interests'
+      path: '/marketplace-interests'
+      fullPath: '/marketplace-interests'
+      preLoaderRoute: typeof AuthenticatedMarketplaceInterestsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/my-projects': {
       id: '/_authenticated/my-projects'
       path: '/my-projects'
@@ -547,6 +567,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCommunityShareRoute: typeof AuthenticatedCommunityShareRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEvidenceRoute: typeof AuthenticatedEvidenceRoute
+  AuthenticatedMarketplaceInterestsRoute: typeof AuthenticatedMarketplaceInterestsRoute
   AuthenticatedMyProjectsRoute: typeof AuthenticatedMyProjectsRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
@@ -565,6 +586,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCommunityShareRoute: AuthenticatedCommunityShareRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEvidenceRoute: AuthenticatedEvidenceRoute,
+  AuthenticatedMarketplaceInterestsRoute:
+    AuthenticatedMarketplaceInterestsRoute,
   AuthenticatedMyProjectsRoute: AuthenticatedMyProjectsRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
