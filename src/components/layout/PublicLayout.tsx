@@ -7,10 +7,13 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 const NAV = [
   { to: "/", label: "Home" },
   { to: "/projects", label: "Projects" },
+  { to: "/marketplace", label: "Marketplace" },
+  { to: "/community", label: "Community" },
   { to: "/map", label: "Map" },
   { to: "/how-it-works", label: "How It Works" },
   { to: "/about", label: "About" },
 ] as const;
+
 
 export function PublicLayout({ children }: { children: ReactNode }) {
   const { session, isVerifier } = useAuth();

@@ -13,13 +13,18 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as CommunityRouteImport } from './routes/community'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as MapRouteImport } from './routes/map'
+import { Route as MarketplaceRouteImport } from './routes/marketplace'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedAuditLogsRouteImport } from './routes/_authenticated/audit-logs'
+import { Route as AuthenticatedCommunityReviewRouteImport } from './routes/_authenticated/community-review'
+import { Route as AuthenticatedCommunityShareRouteImport } from './routes/_authenticated/community-share'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedEvidenceRouteImport } from './routes/_authenticated/evidence'
+import { Route as AuthenticatedMarketplaceInterestsRouteImport } from './routes/_authenticated/marketplace-interests'
 import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authenticated/my-projects'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
@@ -51,6 +56,11 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CommunityRoute = CommunityRouteImport.update({
+  id: '/community',
+  path: '/community',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HowItWorksRoute = HowItWorksRouteImport.update({
   id: '/how-it-works',
   path: '/how-it-works',
@@ -59,6 +69,11 @@ const HowItWorksRoute = HowItWorksRouteImport.update({
 const MapRoute = MapRouteImport.update({
   id: '/map',
   path: '/map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketplaceRoute = MarketplaceRouteImport.update({
+  id: '/marketplace',
+  path: '/marketplace',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -76,6 +91,18 @@ const AuthenticatedAuditLogsRoute = AuthenticatedAuditLogsRouteImport.update({
   path: '/audit-logs',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCommunityReviewRoute =
+  AuthenticatedCommunityReviewRouteImport.update({
+    id: '/community-review',
+    path: '/community-review',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedCommunityShareRoute =
+  AuthenticatedCommunityShareRouteImport.update({
+    id: '/community-share',
+    path: '/community-share',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -86,6 +113,12 @@ const AuthenticatedEvidenceRoute = AuthenticatedEvidenceRouteImport.update({
   path: '/evidence',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMarketplaceInterestsRoute =
+  AuthenticatedMarketplaceInterestsRouteImport.update({
+    id: '/marketplace-interests',
+    path: '/marketplace-interests',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMyProjectsRoute = AuthenticatedMyProjectsRouteImport.update({
   id: '/my-projects',
   path: '/my-projects',
@@ -149,13 +182,18 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
+  '/community': typeof CommunityRoute
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
+  '/marketplace': typeof MarketplaceRoute
   '/projects': typeof ProjectsRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/community-review': typeof AuthenticatedCommunityReviewRoute
+  '/community-share': typeof AuthenticatedCommunityShareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
+  '/marketplace-interests': typeof AuthenticatedMarketplaceInterestsRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -172,13 +210,18 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
+  '/community': typeof CommunityRoute
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
+  '/marketplace': typeof MarketplaceRoute
   '/projects': typeof ProjectsRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/community-review': typeof AuthenticatedCommunityReviewRoute
+  '/community-share': typeof AuthenticatedCommunityShareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
+  '/marketplace-interests': typeof AuthenticatedMarketplaceInterestsRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -197,13 +240,18 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/auth': typeof AuthRoute
+  '/community': typeof CommunityRoute
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
+  '/marketplace': typeof MarketplaceRoute
   '/projects': typeof ProjectsRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/_authenticated/community-review': typeof AuthenticatedCommunityReviewRoute
+  '/_authenticated/community-share': typeof AuthenticatedCommunityShareRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/evidence': typeof AuthenticatedEvidenceRoute
+  '/_authenticated/marketplace-interests': typeof AuthenticatedMarketplaceInterestsRoute
   '/_authenticated/my-projects': typeof AuthenticatedMyProjectsRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
@@ -222,13 +270,18 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/auth'
+    | '/community'
     | '/how-it-works'
     | '/map'
+    | '/marketplace'
     | '/projects'
     | '/analytics'
     | '/audit-logs'
+    | '/community-review'
+    | '/community-share'
     | '/dashboard'
     | '/evidence'
+    | '/marketplace-interests'
     | '/my-projects'
     | '/notifications'
     | '/profile'
@@ -245,13 +298,18 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/auth'
+    | '/community'
     | '/how-it-works'
     | '/map'
+    | '/marketplace'
     | '/projects'
     | '/analytics'
     | '/audit-logs'
+    | '/community-review'
+    | '/community-share'
     | '/dashboard'
     | '/evidence'
+    | '/marketplace-interests'
     | '/my-projects'
     | '/notifications'
     | '/profile'
@@ -269,13 +327,18 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/about'
     | '/auth'
+    | '/community'
     | '/how-it-works'
     | '/map'
+    | '/marketplace'
     | '/projects'
     | '/_authenticated/analytics'
     | '/_authenticated/audit-logs'
+    | '/_authenticated/community-review'
+    | '/_authenticated/community-share'
     | '/_authenticated/dashboard'
     | '/_authenticated/evidence'
+    | '/_authenticated/marketplace-interests'
     | '/_authenticated/my-projects'
     | '/_authenticated/notifications'
     | '/_authenticated/profile'
@@ -294,8 +357,10 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
   AuthRoute: typeof AuthRoute
+  CommunityRoute: typeof CommunityRoute
   HowItWorksRoute: typeof HowItWorksRoute
   MapRoute: typeof MapRoute
+  MarketplaceRoute: typeof MarketplaceRoute
   ProjectsRoute: typeof ProjectsRoute
   VerifyCodeRoute: typeof VerifyCodeRoute
   VerifyIndexRoute: typeof VerifyIndexRoute
@@ -331,6 +396,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/community': {
+      id: '/community'
+      path: '/community'
+      fullPath: '/community'
+      preLoaderRoute: typeof CommunityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/how-it-works': {
       id: '/how-it-works'
       path: '/how-it-works'
@@ -343,6 +415,13 @@ declare module '@tanstack/react-router' {
       path: '/map'
       fullPath: '/map'
       preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/marketplace': {
+      id: '/marketplace'
+      path: '/marketplace'
+      fullPath: '/marketplace'
+      preLoaderRoute: typeof MarketplaceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -366,6 +445,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAuditLogsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/community-review': {
+      id: '/_authenticated/community-review'
+      path: '/community-review'
+      fullPath: '/community-review'
+      preLoaderRoute: typeof AuthenticatedCommunityReviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/community-share': {
+      id: '/_authenticated/community-share'
+      path: '/community-share'
+      fullPath: '/community-share'
+      preLoaderRoute: typeof AuthenticatedCommunityShareRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -378,6 +471,13 @@ declare module '@tanstack/react-router' {
       path: '/evidence'
       fullPath: '/evidence'
       preLoaderRoute: typeof AuthenticatedEvidenceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketplace-interests': {
+      id: '/_authenticated/marketplace-interests'
+      path: '/marketplace-interests'
+      fullPath: '/marketplace-interests'
+      preLoaderRoute: typeof AuthenticatedMarketplaceInterestsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/my-projects': {
@@ -463,8 +563,11 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedAuditLogsRoute: typeof AuthenticatedAuditLogsRoute
+  AuthenticatedCommunityReviewRoute: typeof AuthenticatedCommunityReviewRoute
+  AuthenticatedCommunityShareRoute: typeof AuthenticatedCommunityShareRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEvidenceRoute: typeof AuthenticatedEvidenceRoute
+  AuthenticatedMarketplaceInterestsRoute: typeof AuthenticatedMarketplaceInterestsRoute
   AuthenticatedMyProjectsRoute: typeof AuthenticatedMyProjectsRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
@@ -479,8 +582,12 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedAuditLogsRoute: AuthenticatedAuditLogsRoute,
+  AuthenticatedCommunityReviewRoute: AuthenticatedCommunityReviewRoute,
+  AuthenticatedCommunityShareRoute: AuthenticatedCommunityShareRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEvidenceRoute: AuthenticatedEvidenceRoute,
+  AuthenticatedMarketplaceInterestsRoute:
+    AuthenticatedMarketplaceInterestsRoute,
   AuthenticatedMyProjectsRoute: AuthenticatedMyProjectsRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
@@ -500,8 +607,10 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AboutRoute: AboutRoute,
   AuthRoute: AuthRoute,
+  CommunityRoute: CommunityRoute,
   HowItWorksRoute: HowItWorksRoute,
   MapRoute: MapRoute,
+  MarketplaceRoute: MarketplaceRoute,
   ProjectsRoute: ProjectsRoute,
   VerifyCodeRoute: VerifyCodeRoute,
   VerifyIndexRoute: VerifyIndexRoute,

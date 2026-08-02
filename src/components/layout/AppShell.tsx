@@ -3,7 +3,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
+  Building2,
   ClipboardCheck,
+
   FileStack,
   FolderKanban,
   Gauge,
@@ -14,7 +16,9 @@ import {
   PlusCircle,
   ScrollText,
   UserRound,
+  Users,
   Waves,
+
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,6 +30,7 @@ const OWNER_NAV = [
   { to: "/my-projects", label: "My Projects", icon: FolderKanban },
   { to: "/register-project", label: "Register Project", icon: PlusCircle },
   { to: "/evidence", label: "Evidence", icon: Images },
+  { to: "/community-share", label: "Community Stories", icon: Users },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/profile", label: "Profile", icon: UserRound },
 ] as const;
@@ -35,10 +40,13 @@ const VERIFIER_NAV = [
   { to: "/queue", label: "Verification Queue", icon: ClipboardCheck },
   { to: "/registry", label: "Projects", icon: FileStack },
   { to: "/registry-map", label: "Map", icon: MapIcon },
+  { to: "/community-review", label: "Community Review", icon: Users },
+  { to: "/marketplace-interests", label: "Marketplace Interest", icon: Building2 },
   { to: "/analytics", label: "Analytics", icon: Gauge },
   { to: "/audit-logs", label: "Audit Logs", icon: ScrollText },
   { to: "/notifications", label: "Notifications", icon: Bell },
 ] as const;
+
 
 export function AppShell({
   title,
