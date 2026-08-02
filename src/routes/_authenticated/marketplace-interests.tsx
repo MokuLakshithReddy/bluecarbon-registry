@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_authenticated/marketplace-interests")({
   component: MarketplaceInterestsPage,
 });
 
-const STATUSES = ["NEW", "IN_DISCUSSION", "CLOSED", "DECLINED"] as const;
+const STATUSES = ["NEW", "IN_DISCUSSION", "CLOSED"] as const;
 
 interface InterestRow {
   id: string;
@@ -64,7 +64,7 @@ function MarketplaceInterestsPage() {
   });
 
   const setStatus = useMutation({
-    mutationFn: async (input: { id: string; status: string }) => {
+    mutationFn: async (input: { id: string; status: (typeof STATUSES)[number] }) => {
       const { error } = await supabase
         .from("marketplace_interests")
         .update({ status: input.status })
@@ -123,7 +123,10 @@ function MarketplaceInterestsPage() {
               <select
                 value={row.status}
                 aria-label={`Status for ${row.company_name}`}
-                onChange={(event) => setStatus.mutate({ id: row.id, status: event.target.value })}
+                onChange={(event) => setStatus.mutate({
+                    id: row.id,
+                    status: event.target.value as (typeof STATUSES)[number],
+                  })}
                 className="h-9 rounded-lg border border-border bg-card px-3 text-sm"
               >
                 {STATUSES.map((status) => (
