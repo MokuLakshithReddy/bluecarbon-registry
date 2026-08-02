@@ -19,6 +19,7 @@ import { Route as MapRouteImport } from './routes/map'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedAuditLogsRouteImport } from './routes/_authenticated/audit-logs'
+import { Route as AuthenticatedCommunityShareRouteImport } from './routes/_authenticated/community-share'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedEvidenceRouteImport } from './routes/_authenticated/evidence'
 import { Route as AuthenticatedMyProjectsRouteImport } from './routes/_authenticated/my-projects'
@@ -82,6 +83,12 @@ const AuthenticatedAuditLogsRoute = AuthenticatedAuditLogsRouteImport.update({
   path: '/audit-logs',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCommunityShareRoute =
+  AuthenticatedCommunityShareRouteImport.update({
+    id: '/community-share',
+    path: '/community-share',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -161,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof ProjectsRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/community-share': typeof AuthenticatedCommunityShareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
@@ -185,6 +193,7 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/community-share': typeof AuthenticatedCommunityShareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/evidence': typeof AuthenticatedEvidenceRoute
   '/my-projects': typeof AuthenticatedMyProjectsRoute
@@ -211,6 +220,7 @@ export interface FileRoutesById {
   '/projects': typeof ProjectsRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/_authenticated/community-share': typeof AuthenticatedCommunityShareRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/evidence': typeof AuthenticatedEvidenceRoute
   '/_authenticated/my-projects': typeof AuthenticatedMyProjectsRoute
@@ -237,6 +247,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/analytics'
     | '/audit-logs'
+    | '/community-share'
     | '/dashboard'
     | '/evidence'
     | '/my-projects'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/analytics'
     | '/audit-logs'
+    | '/community-share'
     | '/dashboard'
     | '/evidence'
     | '/my-projects'
@@ -286,6 +298,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/_authenticated/analytics'
     | '/_authenticated/audit-logs'
+    | '/_authenticated/community-share'
     | '/_authenticated/dashboard'
     | '/_authenticated/evidence'
     | '/_authenticated/my-projects'
@@ -386,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAuditLogsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/community-share': {
+      id: '/_authenticated/community-share'
+      path: '/community-share'
+      fullPath: '/community-share'
+      preLoaderRoute: typeof AuthenticatedCommunityShareRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -483,6 +503,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedAuditLogsRoute: typeof AuthenticatedAuditLogsRoute
+  AuthenticatedCommunityShareRoute: typeof AuthenticatedCommunityShareRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEvidenceRoute: typeof AuthenticatedEvidenceRoute
   AuthenticatedMyProjectsRoute: typeof AuthenticatedMyProjectsRoute
@@ -499,6 +520,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedAuditLogsRoute: AuthenticatedAuditLogsRoute,
+  AuthenticatedCommunityShareRoute: AuthenticatedCommunityShareRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEvidenceRoute: AuthenticatedEvidenceRoute,
   AuthenticatedMyProjectsRoute: AuthenticatedMyProjectsRoute,
