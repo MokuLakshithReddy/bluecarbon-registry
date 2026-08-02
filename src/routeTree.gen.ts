@@ -16,6 +16,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CommunityRouteImport } from './routes/community'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as MapRouteImport } from './routes/map'
+import { Route as MarketplaceRouteImport } from './routes/marketplace'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedAuditLogsRouteImport } from './routes/_authenticated/audit-logs'
@@ -67,6 +68,11 @@ const HowItWorksRoute = HowItWorksRouteImport.update({
 const MapRoute = MapRouteImport.update({
   id: '/map',
   path: '/map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketplaceRoute = MarketplaceRouteImport.update({
+  id: '/marketplace',
+  path: '/marketplace',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/community': typeof CommunityRoute
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
+  '/marketplace': typeof MarketplaceRoute
   '/projects': typeof ProjectsRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
@@ -198,6 +205,7 @@ export interface FileRoutesByTo {
   '/community': typeof CommunityRoute
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
+  '/marketplace': typeof MarketplaceRoute
   '/projects': typeof ProjectsRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
@@ -226,6 +234,7 @@ export interface FileRoutesById {
   '/community': typeof CommunityRoute
   '/how-it-works': typeof HowItWorksRoute
   '/map': typeof MapRoute
+  '/marketplace': typeof MarketplaceRoute
   '/projects': typeof ProjectsRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/audit-logs': typeof AuthenticatedAuditLogsRoute
@@ -254,6 +263,7 @@ export interface FileRouteTypes {
     | '/community'
     | '/how-it-works'
     | '/map'
+    | '/marketplace'
     | '/projects'
     | '/analytics'
     | '/audit-logs'
@@ -280,6 +290,7 @@ export interface FileRouteTypes {
     | '/community'
     | '/how-it-works'
     | '/map'
+    | '/marketplace'
     | '/projects'
     | '/analytics'
     | '/audit-logs'
@@ -307,6 +318,7 @@ export interface FileRouteTypes {
     | '/community'
     | '/how-it-works'
     | '/map'
+    | '/marketplace'
     | '/projects'
     | '/_authenticated/analytics'
     | '/_authenticated/audit-logs'
@@ -335,6 +347,7 @@ export interface RootRouteChildren {
   CommunityRoute: typeof CommunityRoute
   HowItWorksRoute: typeof HowItWorksRoute
   MapRoute: typeof MapRoute
+  MarketplaceRoute: typeof MarketplaceRoute
   ProjectsRoute: typeof ProjectsRoute
   VerifyCodeRoute: typeof VerifyCodeRoute
   VerifyIndexRoute: typeof VerifyIndexRoute
@@ -389,6 +402,13 @@ declare module '@tanstack/react-router' {
       path: '/map'
       fullPath: '/map'
       preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/marketplace': {
+      id: '/marketplace'
+      path: '/marketplace'
+      fullPath: '/marketplace'
+      preLoaderRoute: typeof MarketplaceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -567,6 +587,7 @@ const rootRouteChildren: RootRouteChildren = {
   CommunityRoute: CommunityRoute,
   HowItWorksRoute: HowItWorksRoute,
   MapRoute: MapRoute,
+  MarketplaceRoute: MarketplaceRoute,
   ProjectsRoute: ProjectsRoute,
   VerifyCodeRoute: VerifyCodeRoute,
   VerifyIndexRoute: VerifyIndexRoute,
