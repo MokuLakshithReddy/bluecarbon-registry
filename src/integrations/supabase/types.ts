@@ -190,6 +190,77 @@ export type Database = {
           },
         ]
       }
+      community_posts: {
+        Row: {
+          author_email: string | null
+          author_id: string
+          author_name: string
+          body: string | null
+          created_at: string
+          id: string
+          latitude: number | null
+          longitude: number | null
+          media_type: string
+          media_url: string | null
+          moderated_at: string | null
+          moderated_by: string | null
+          moderator_note: string | null
+          place_name: string | null
+          project_id: string | null
+          status: Database["public"]["Enums"]["community_post_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_email?: string | null
+          author_id: string
+          author_name: string
+          body?: string | null
+          created_at?: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          media_type?: string
+          media_url?: string | null
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderator_note?: string | null
+          place_name?: string | null
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["community_post_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_email?: string | null
+          author_id?: string
+          author_name?: string
+          body?: string | null
+          created_at?: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          media_type?: string
+          media_url?: string | null
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderator_note?: string | null
+          place_name?: string | null
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["community_post_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_posts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       evidence: {
         Row: {
           capture_date: string | null
@@ -251,6 +322,62 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "evidence_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_interests: {
+        Row: {
+          company_name: string
+          contact_email: string
+          contact_name: string
+          contact_phone: string | null
+          created_at: string
+          id: string
+          intended_use: string | null
+          message: string | null
+          project_id: string
+          requested_tco2e: number | null
+          requester_id: string
+          status: Database["public"]["Enums"]["interest_status"]
+          updated_at: string
+        }
+        Insert: {
+          company_name: string
+          contact_email: string
+          contact_name: string
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          intended_use?: string | null
+          message?: string | null
+          project_id: string
+          requested_tco2e?: number | null
+          requester_id: string
+          status?: Database["public"]["Enums"]["interest_status"]
+          updated_at?: string
+        }
+        Update: {
+          company_name?: string
+          contact_email?: string
+          contact_name?: string
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          intended_use?: string | null
+          message?: string | null
+          project_id?: string
+          requested_tco2e?: number | null
+          requester_id?: string
+          status?: Database["public"]["Enums"]["interest_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_interests_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -587,12 +714,14 @@ export type Database = {
     }
     Enums: {
       app_role: "project_owner" | "verifier" | "admin"
+      community_post_status: "PENDING" | "APPROVED" | "REJECTED"
       ecosystem_type:
         | "MANGROVE"
         | "SEAGRASS"
         | "SALT_MARSH"
         | "COASTAL_WETLAND"
         | "OTHER"
+      interest_status: "NEW" | "IN_DISCUSSION" | "CLOSED"
       project_status:
         | "DRAFT"
         | "SUBMITTED"
@@ -728,6 +857,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["project_owner", "verifier", "admin"],
+      community_post_status: ["PENDING", "APPROVED", "REJECTED"],
       ecosystem_type: [
         "MANGROVE",
         "SEAGRASS",
@@ -735,6 +865,7 @@ export const Constants = {
         "COASTAL_WETLAND",
         "OTHER",
       ],
+      interest_status: ["NEW", "IN_DISCUSSION", "CLOSED"],
       project_status: [
         "DRAFT",
         "SUBMITTED",
