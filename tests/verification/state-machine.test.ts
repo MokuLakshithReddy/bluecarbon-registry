@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import type { ProjectStatus } from "../../src/lib/domain.ts";
+import { computeFileSha256 } from "../../src/lib/evidence-validator.ts";
 
 /**
  * Registry State Machine Implementation & Validator
@@ -153,12 +154,22 @@ test("State Machine: approveProject fails closed and refuses non-atomic fallback
   let fallbackUpdateExecuted = false;
   let fallbackReviewInserted = false;
 
+  const validSurveyBytes = Buffer.from("survey valid mock content");
+
   // Mock Supabase client where RPC fails
   const mockSupabase = {
     auth: {
       getUser: async () => ({
         data: { user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" } },
         error: null,
+      }),
+    },
+    storage: {
+      from: () => ({
+        download: async () => ({
+          data: new Uint8Array(validSurveyBytes),
+          error: null,
+        }),
       }),
     },
     from: (table: string) => ({
@@ -186,7 +197,9 @@ test("State Machine: approveProject fails closed and refuses non-atomic fallback
                     {
                       id: "00000000-0000-0000-0000-000000000003",
                       file_name: "survey.pdf",
-                      file_hash: "a".repeat(64),
+                      file_url:
+                        "storage://evidence/00000000-0000-0000-0000-000000000002/survey.pdf",
+                      file_hash: computeFileSha256(validSurveyBytes),
                     },
                   ],
                   error: null,
@@ -401,11 +414,13 @@ test("State Machine: approveProject handles anchoring failures and transitions t
     owner_email: "owner@test.org",
   };
 
+  const validEvidenceBytes = Buffer.from("baseline report bytes");
   const validEvidence = [
     {
       id: "e1",
       file_name: "baseline_report.pdf",
-      file_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      file_url: "storage://evidence/00000000-0000-0000-0000-000000000002/baseline_report.pdf",
+      file_hash: computeFileSha256(validEvidenceBytes),
     },
   ];
 
@@ -426,6 +441,14 @@ test("State Machine: approveProject handles anchoring failures and transitions t
             user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" },
           },
           error: null,
+        }),
+      },
+      storage: {
+        from: () => ({
+          download: async () => ({
+            data: new Uint8Array(validEvidenceBytes),
+            error: null,
+          }),
         }),
       },
       from: (table: string) => ({
@@ -646,5 +669,429 @@ test("State Machine: approveProject handles anchoring failures and transitions t
     },
     /Outbox simulation record error: Database outage during retry record/,
     "retryProjectAnchor must never swallow database failures during retries",
+  );
+});
+
+test("State Machine: Evidence provenance fails closed across all invalid or tampered storage cases", async () => {
+  const { approveProject } = await import("../../src/lib/registry.server.ts");
+  type RegistryClient = Parameters<typeof approveProject>[0]["supabase"];
+
+  const authenticBytes = Buffer.from("authentic mangrove survey sensor log 2026");
+  const authenticHash = computeFileSha256(authenticBytes);
+
+  function createTestHarness(opts: {
+    evidenceItem: {
+      id: string;
+      file_name: string;
+      file_url?: string | null;
+      file_hash?: string | null;
+    };
+    storageDownload?: () => Promise<{
+      data: Blob | Uint8Array | null;
+      error: { message: string } | null;
+    }>;
+    hasStorageClient?: boolean;
+  }) {
+    const project = {
+      id: "00000000-0000-0000-0000-000000000002",
+      project_code: "BC-MNG-EVID-SEC",
+      name: "Evidence Provenance Security Mangrove",
+      status: "UNDER_REVIEW",
+      ecosystem: "MANGROVE",
+      estimated_carbon: 500,
+      owner_email: "owner@test.org",
+    };
+
+    const client: Record<string, unknown> = {
+      auth: {
+        getUser: async () => ({
+          data: {
+            user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" },
+          },
+          error: null,
+        }),
+      },
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            then: (resolve: (val: unknown) => void) => {
+              if (table === "user_roles") {
+                return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
+              }
+              if (table === "evidence") {
+                return Promise.resolve({ data: [opts.evidenceItem], error: null }).then(resolve);
+              }
+              return Promise.resolve({ data: [project], error: null }).then(resolve);
+            },
+            single: async () => ({ data: project, error: null }),
+            maybeSingle: async () => ({
+              data: table === "user_roles" ? { role: "verifier" } : project,
+              error: null,
+            }),
+          }),
+        }),
+      }),
+      rpc: async (fn: string) => {
+        if (fn === "perform_verification_decision") {
+          return { data: { success: true }, error: null };
+        }
+        return { data: null, error: null };
+      },
+    };
+
+    if (opts.hasStorageClient !== false) {
+      client.storage = {
+        from: () => ({
+          download:
+            opts.storageDownload ??
+            (async () => ({
+              data: new Uint8Array(authenticBytes),
+              error: null,
+            })),
+        }),
+      };
+    }
+
+    return client as unknown as RegistryClient;
+  }
+
+  // 1. Missing / null file_url fails closed
+  const clientNoUrl = createTestHarness({
+    evidenceItem: {
+      id: "e1",
+      file_name: "survey.pdf",
+      file_url: null,
+      file_hash: authenticHash,
+    },
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientNoUrl,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /is missing a valid file_url storage reference/,
+    "Must fail closed when file_url is missing or null",
+  );
+
+  // 2. HTTP external URL fails closed
+  const clientHttpUrl = createTestHarness({
+    evidenceItem: {
+      id: "e2",
+      file_name: "external_evidence.pdf",
+      file_url: "https://evil-untrusted-bucket.com/evidence.pdf",
+      file_hash: authenticHash,
+    },
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientHttpUrl,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /references an unsupported external URL format/,
+    "Must fail closed when file_url is an external HTTP/HTTPS URL",
+  );
+
+  // 3. Unrecognized or invalid storage path fails closed
+  const clientInvalidStorage = createTestHarness({
+    evidenceItem: {
+      id: "e3",
+      file_name: "invalid.pdf",
+      file_url: "storage://wrong_bucket/123/file.pdf",
+      file_hash: authenticHash,
+    },
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientInvalidStorage,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /does not resolve to a valid storage object path/,
+    "Must fail closed when storage URI does not match approved storage path pattern",
+  );
+
+  // 4. Missing storage client fails closed
+  const clientNoStorageClient = createTestHarness({
+    evidenceItem: {
+      id: "e4",
+      file_name: "survey.pdf",
+      file_url: "storage://evidence/00000000-0000-0000-0000-000000000002/survey.pdf",
+      file_hash: authenticHash,
+    },
+    hasStorageClient: false,
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientNoStorageClient,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /Evidence storage client is unavailable for provenance verification/,
+    "Must fail closed when storage client is completely missing or unavailable",
+  );
+
+  // 5. Storage download error fails closed
+  const clientDownloadError = createTestHarness({
+    evidenceItem: {
+      id: "e5",
+      file_name: "survey.pdf",
+      file_url: "storage://evidence/00000000-0000-0000-0000-000000000002/survey.pdf",
+      file_hash: authenticHash,
+    },
+    storageDownload: async () => ({
+      data: null,
+      error: { message: "Storage network timeout (504)" },
+    }),
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientDownloadError,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /Unable to retrieve evidence file "survey\.pdf" from storage for provenance verification: Storage network timeout/,
+    "Must fail closed when storage download returns an error",
+  );
+
+  // 6. Storage download returns null data with no error (missing file data) fails closed
+  const clientNullData = createTestHarness({
+    evidenceItem: {
+      id: "e6",
+      file_name: "missing.pdf",
+      file_url: "storage://evidence/00000000-0000-0000-0000-000000000002/missing.pdf",
+      file_hash: authenticHash,
+    },
+    storageDownload: async () => ({ data: null, error: null }),
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientNullData,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /returned no file data/,
+    "Must fail closed when download returns no file data",
+  );
+
+  // 7. Storage download returns empty file (0 bytes) fails closed
+  const clientEmptyFile = createTestHarness({
+    evidenceItem: {
+      id: "e7",
+      file_name: "empty.pdf",
+      file_url: "storage://evidence/00000000-0000-0000-0000-000000000002/empty.pdf",
+      file_hash: authenticHash,
+    },
+    storageDownload: async () => ({ data: new Uint8Array(0), error: null }),
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientEmptyFile,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /is empty \(0 bytes\)/,
+    "Must fail closed when evidence object is 0 bytes",
+  );
+
+  // 8. Tampered file bytes (hash mismatch) fails closed
+  const tamperedBytes = Buffer.from(authenticBytes);
+  tamperedBytes[0] ^= 0xff; // corrupt a byte
+  const clientTampered = createTestHarness({
+    evidenceItem: {
+      id: "e8",
+      file_name: "tampered_survey.pdf",
+      file_url: "storage://evidence/00000000-0000-0000-0000-000000000002/tampered_survey.pdf",
+      file_hash: authenticHash,
+    },
+    storageDownload: async () => ({ data: new Uint8Array(tamperedBytes), error: null }),
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientTampered,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /Evidence provenance check failed for "tampered_survey\.pdf"\. Hash mismatch \(tampering detected\)/,
+    "Must fail closed when storage bytes SHA-256 does not match recorded file_hash",
+  );
+
+  // 9. Authentic file with matching SHA-256 succeeds
+  const clientAuthentic = createTestHarness({
+    evidenceItem: {
+      id: "e9",
+      file_name: "authentic_drone_orthomosaic.tif",
+      file_url:
+        "storage://evidence/00000000-0000-0000-0000-000000000002/authentic_drone_orthomosaic.tif",
+      file_hash: authenticHash,
+    },
+    storageDownload: async () => ({ data: new Uint8Array(authenticBytes), error: null }),
+  });
+  const res = await approveProject({
+    supabase: clientAuthentic,
+    userId: "00000000-0000-0000-0000-000000000001",
+    verifierEmail: "verifier@test.org",
+    projectId: "00000000-0000-0000-0000-000000000002",
+    confirmedCarbon: 500,
+  });
+  assert.strictEqual(res.status, "VERIFIED_PENDING_ANCHOR");
+});
+
+test("Worker Recovery: processClaimedOutboxJob explicitly completes outbox job on already-verified projects and raises compound error if fail_outbox_job fails", async () => {
+  const { processClaimedOutboxJob } = await import("../../src/lib/registry.server.ts");
+  type RegistryClient = Parameters<typeof processClaimedOutboxJob>[0];
+
+  const projectId = "00000000-0000-0000-0000-000000000002";
+  const jobId = "11111111-2222-3333-4444-555555555555";
+  const samplePayload = {
+    project_code: "BC-MNG-STORED",
+    project_name: "Stored Payload Mangrove",
+    ecosystem: "MANGROVE",
+    verified_tco2e: 500,
+    methodology: "IPCC-2019-WETLANDS-MNG",
+    evidence_count: 1,
+    evidence_hashes: ["a".repeat(64)],
+    verifier_id: "00000000-0000-0000-0000-000000000001",
+    verified_at: new Date().toISOString(),
+  };
+
+  // 1. When project is already VERIFIED, worker calls complete_outbox_job
+  let completeOutboxJobCalled = false;
+  let completedJobId = "";
+  let completedTxHash: unknown = null;
+
+  const mockVerifiedClient = {
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => ({
+          single: async () => {
+            if (table === "projects") {
+              return { data: { status: "VERIFIED", verified_carbon: 500 }, error: null };
+            }
+            return { data: null, error: null };
+          },
+          order: () => ({
+            limit: () => ({
+              maybeSingle: async () => {
+                if (table === "blockchain_records") {
+                  return {
+                    data: { tx_hash: "0x1234567890abcdef", record_hash: "0xabcdef1234567890" },
+                    error: null,
+                  };
+                }
+                return { data: null, error: null };
+              },
+            }),
+          }),
+        }),
+      }),
+    }),
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === "complete_outbox_job") {
+        completeOutboxJobCalled = true;
+        completedJobId = args._job_id as string;
+        completedTxHash = args._tx_hash;
+        return { data: null, error: null };
+      }
+      return { data: null, error: null };
+    },
+  };
+
+  const cleanupRes = await processClaimedOutboxJob(
+    mockVerifiedClient as unknown as RegistryClient,
+    { id: jobId, project_id: projectId, payload: samplePayload, attempts: 1 },
+  );
+
+  assert.strictEqual(cleanupRes.status, "VERIFIED");
+  assert.strictEqual(cleanupRes.alreadyVerified, true);
+  assert.strictEqual(cleanupRes.txHash, "0x1234567890abcdef");
+  assert.strictEqual(
+    completeOutboxJobCalled,
+    true,
+    "Must invoke complete_outbox_job to clean queue",
+  );
+  assert.strictEqual(completedJobId, jobId);
+  assert.strictEqual(completedTxHash, "0x1234567890abcdef");
+
+  // 2. When execution fails and fail_outbox_job also fails, worker raises compound error
+  const mockFailingOutboxClient = {
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => ({
+          single: async () => {
+            if (table === "projects") {
+              return {
+                data: { status: "VERIFIED_PENDING_ANCHOR", verified_carbon: 500 },
+                error: null,
+              };
+            }
+            return { data: null, error: null };
+          },
+        }),
+      }),
+    }),
+    rpc: async (fn: string) => {
+      if (fn === "record_simulated_demo_anchor" || fn === "confirm_blockchain_anchor") {
+        return {
+          data: null,
+          error: { message: "Database outage during anchor persistence" },
+        };
+      }
+      if (fn === "fail_outbox_job") {
+        return {
+          data: null,
+          error: { message: "Database connection pool exhausted during fail_outbox_job" },
+        };
+      }
+      return { data: null, error: null };
+    },
+  };
+
+  // We deliberately make anchorVerifiedRecord throw or fail inside try
+  // By passing an invalid verifier_id that causes assertVerifier or anchor to fail, or mocking
+  await assert.rejects(
+    async () => {
+      await processClaimedOutboxJob(mockFailingOutboxClient as unknown as RegistryClient, {
+        id: jobId,
+        project_id: projectId,
+        payload: { ...samplePayload, verifier_id: "invalid-uuid" },
+        attempts: 1,
+      });
+    },
+    /Outbox job execution failed .* and recording failure in outbox also failed \(Database connection pool exhausted during fail_outbox_job\)/,
+    "Worker must raise compound error without losing failure signal when outbox failure update fails",
   );
 });

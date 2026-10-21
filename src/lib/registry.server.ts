@@ -323,67 +323,111 @@ export async function approveProject(input: DecisionInput) {
     );
   }
 
-  // 1b. Provenance Verification: Verify actual storage object bytes match recorded file_hash
+  // 1b. Provenance Verification: Fail-closed byte-level cryptographic integrity check
+  type EvidenceStorageClient = {
+    from(bucket: string): {
+      download(
+        path: string,
+      ): Promise<{ data: Blob | Uint8Array | null; error: { message: string } | null }>;
+    };
+  };
+
+  let storageClient: EvidenceStorageClient | null = null;
+  try {
+    const admin = await getAdmin();
+    if (
+      admin &&
+      "storage" in admin &&
+      (admin as unknown as { storage: EvidenceStorageClient }).storage
+    ) {
+      storageClient = (admin as unknown as { storage: EvidenceStorageClient }).storage;
+    }
+  } catch {
+    // Admin client unavailable; fallback to input.supabase storage if provided
+  }
+  if (
+    !storageClient &&
+    input.supabase &&
+    "storage" in input.supabase &&
+    (input.supabase as unknown as { storage: EvidenceStorageClient }).storage
+  ) {
+    storageClient = (input.supabase as unknown as { storage: EvidenceStorageClient }).storage;
+  }
+
+  if (!storageClient) {
+    throw new Error(
+      "Verification approval rejected: Evidence storage client is unavailable for provenance verification.",
+    );
+  }
+
   for (const item of evidence) {
-    if (item.file_url) {
-      let storagePath: string | null = null;
-      if (item.file_url.startsWith("storage://evidence/")) {
-        const match = item.file_url.match(EVIDENCE_STORAGE_REGEX);
-        if (match) storagePath = `${match[1]}/${match[2]}`;
-      } else if (!item.file_url.startsWith("http")) {
-        storagePath = item.file_url.includes("/")
-          ? item.file_url
-          : `${project.id}/${item.file_url}`;
+    const evidenceName = item.file_name || item.id || "unnamed evidence";
+
+    if (!item.file_url || typeof item.file_url !== "string" || item.file_url.trim() === "") {
+      throw new Error(
+        `Verification approval rejected: Evidence record "${evidenceName}" is missing a valid file_url storage reference.`,
+      );
+    }
+
+    const fileUrl = item.file_url.trim();
+
+    // Reject HTTP/HTTPS and arbitrary external URL schemes
+    if (
+      fileUrl.startsWith("http://") ||
+      fileUrl.startsWith("https://") ||
+      (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(fileUrl) && !fileUrl.startsWith("storage://"))
+    ) {
+      throw new Error(
+        `Verification approval rejected: Evidence record "${evidenceName}" references an unsupported external URL format ("${fileUrl}"). Evidence must reside in approved object storage.`,
+      );
+    }
+
+    let storagePath: string | null = null;
+    if (fileUrl.startsWith("storage://evidence/")) {
+      const match = fileUrl.match(EVIDENCE_STORAGE_REGEX);
+      if (match && match[1] && match[2]) {
+        storagePath = `${match[1]}/${match[2]}`;
       }
+    } else if (!fileUrl.includes("://")) {
+      storagePath = fileUrl.includes("/") ? fileUrl : `${project.id}/${fileUrl}`;
+    }
 
-      if (storagePath) {
-        type EvidenceStorageClient = {
-          from(bucket: string): {
-            download(
-              path: string,
-            ): Promise<{ data: Blob | Uint8Array | null; error: { message: string } | null }>;
-          };
-        };
+    if (!storagePath) {
+      throw new Error(
+        `Verification approval rejected: Evidence record "${evidenceName}" does not resolve to a valid storage object path ("${fileUrl}").`,
+      );
+    }
 
-        let storageClient: EvidenceStorageClient | null = null;
-        try {
-          const admin = await getAdmin();
-          if (admin && "storage" in admin) {
-            storageClient = (admin as unknown as { storage: EvidenceStorageClient }).storage;
-          }
-        } catch {
-          if (input.supabase && "storage" in input.supabase) {
-            storageClient = (input.supabase as unknown as { storage: EvidenceStorageClient })
-              .storage;
-          }
-        }
+    const { data: fileBlob, error: downloadError } = await storageClient
+      .from("evidence")
+      .download(storagePath);
 
-        if (storageClient) {
-          const { data: fileBlob, error: downloadError } = await storageClient
-            .from("evidence")
-            .download(storagePath);
+    if (downloadError) {
+      throw new Error(
+        `Verification approval rejected: Unable to retrieve evidence file "${evidenceName}" from storage for provenance verification: ${downloadError.message}`,
+      );
+    }
 
-          if (downloadError) {
-            throw new Error(
-              `Verification approval rejected: Unable to retrieve evidence file "${item.file_name}" from storage for provenance verification: ${downloadError.message}`,
-            );
-          }
+    if (!fileBlob) {
+      throw new Error(
+        `Verification approval rejected: Evidence storage object "${storagePath}" for "${evidenceName}" returned no file data.`,
+      );
+    }
 
-          if (fileBlob) {
-            const bytes: Uint8Array =
-              fileBlob instanceof Uint8Array
-                ? fileBlob
-                : new Uint8Array(await fileBlob.arrayBuffer());
+    const bytes: Uint8Array =
+      fileBlob instanceof Uint8Array ? fileBlob : new Uint8Array(await fileBlob.arrayBuffer());
 
-            const provenance = verifyEvidenceProvenance(bytes, item.file_hash!);
-            if (!provenance.valid) {
-              throw new Error(
-                `Verification approval rejected: Evidence provenance check failed for "${item.file_name}". ${provenance.error}`,
-              );
-            }
-          }
-        }
-      }
+    if (bytes.byteLength === 0) {
+      throw new Error(
+        `Verification approval rejected: Evidence file "${evidenceName}" from storage is empty (0 bytes).`,
+      );
+    }
+
+    const provenance = verifyEvidenceProvenance(bytes, item.file_hash!);
+    if (!provenance.valid) {
+      throw new Error(
+        `Verification approval rejected: Evidence provenance check failed for "${evidenceName}". ${provenance.error}`,
+      );
     }
   }
 
@@ -473,7 +517,7 @@ export async function processClaimedOutboxJob(
 
   const payload = job.payload;
 
-  // 1. Idempotency Check: Verify if project is already verified and record already exists
+  // 1. Idempotency Check & Cleanup: Verify if project is already verified and record already exists
   const { data: project } = await supabase
     .from("projects")
     .select("status, verified_carbon")
@@ -481,11 +525,33 @@ export async function processClaimedOutboxJob(
     .single();
 
   if (project?.status === "VERIFIED") {
+    // Explicitly mark claimed outbox job complete to clean up the queue
+    const { data: existingRec } = await supabase
+      .from("blockchain_records")
+      .select("tx_hash, record_hash")
+      .eq("project_id", job.project_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { error: completeErr } = await supabaseWithRpc.rpc("complete_outbox_job", {
+      _job_id: job.id,
+      _tx_hash: existingRec?.tx_hash ?? null,
+      _record_hash: existingRec?.record_hash ?? null,
+    });
+
+    if (completeErr) {
+      throw new Error(
+        `Idempotency cleanup failed: could not complete outbox job ${job.id} for verified project: ${completeErr.message}`,
+      );
+    }
+
     return {
       processed: true,
       status: "VERIFIED" as const,
       jobId: job.id,
       alreadyVerified: true,
+      txHash: existingRec?.tx_hash,
     };
   }
 
@@ -556,12 +622,17 @@ export async function processClaimedOutboxJob(
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    await supabaseWithRpc.rpc("fail_outbox_job", {
+    const { error: failErr } = await supabaseWithRpc.rpc("fail_outbox_job", {
       _job_id: job.id,
       _error_message: errorMsg,
       _base_delay_seconds: 30,
       _max_attempts: 5,
     });
+    if (failErr) {
+      throw new Error(
+        `Outbox job execution failed (${errorMsg}), and recording failure in outbox also failed (${failErr.message})`,
+      );
+    }
     throw err;
   }
 }

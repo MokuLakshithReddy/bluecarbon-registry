@@ -603,3 +603,51 @@ test("DB Integration: confirm_blockchain_anchor handles duplicate delivery idemp
   );
   assert.strictEqual(records.rows[0].count, 1, "Must never insert duplicate blockchain records");
 });
+
+test("DB Integration: complete_outbox_job explicitly marks job complete and clears worker locks", async () => {
+  const db = await initTestDatabase();
+
+  const verifierId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const nonVerifierId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  const projectId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+  const jobId = "11111111-2222-3333-4444-555555555555";
+  const txHash = "0x" + "c".repeat(64);
+  const recordHash = "0x" + "d".repeat(64);
+
+  await setSessionContext(db, "service_role");
+  await db.exec(`
+    INSERT INTO public.user_roles (user_id, role) VALUES ('${verifierId}', 'verifier');
+    INSERT INTO public.user_roles (user_id, role) VALUES ('${nonVerifierId}', 'project_owner');
+    INSERT INTO public.projects (id, owner_id, owner_email, project_code, name, status, estimated_carbon)
+    VALUES ('${projectId}', '${nonVerifierId}', 'owner@test.org', 'BC-MNG-CLEANUP', 'Cleanup Test', 'VERIFIED', 500);
+    INSERT INTO public.blockchain_records (project_id, record_hash, tx_hash, block_number, network, status, verifier_id, verified_tco2e, anchored_payload)
+    VALUES ('${projectId}', '${recordHash}', '${txHash}', 1234, 'Polygon Amoy', 'CONFIRMED', '${verifierId}', 500, '{}'::jsonb);
+    INSERT INTO public.blockchain_outbox (id, project_id, payload, status, locked_by, locked_until)
+    VALUES ('${jobId}', '${projectId}', '{"test": 1}'::jsonb, 'PENDING', 'stale-worker', now() + interval '5 minutes');
+  `);
+
+  // 1. Non-verifier cannot complete outbox job
+  await setSessionContext(db, "authenticated", nonVerifierId);
+  await assert.rejects(async () => {
+    await db.query(`SELECT public.complete_outbox_job('${jobId}');`);
+  }, /Unauthorized: Only verifiers or service-role can complete outbox jobs/);
+
+  // 2. Verifier completes outbox job (cleanup)
+  await setSessionContext(db, "authenticated", verifierId);
+  await db.query(`SELECT public.complete_outbox_job('${jobId}');`);
+
+  const jobRes = await db.query(`
+    SELECT status, locked_by, locked_until, completed_at, tx_hash, record_hash
+    FROM public.blockchain_outbox
+    WHERE id = '${jobId}';
+  `);
+
+  assert.strictEqual(jobRes.rows.length, 1);
+  const completedJob = jobRes.rows[0];
+  assert.strictEqual(completedJob.status, "CONFIRMED");
+  assert.strictEqual(completedJob.locked_by, null);
+  assert.strictEqual(completedJob.locked_until, null);
+  assert.ok(completedJob.completed_at != null);
+  assert.strictEqual(completedJob.tx_hash, txHash);
+  assert.strictEqual(completedJob.record_hash, recordHash);
+});

@@ -909,6 +909,50 @@ END; $$;
 
 GRANT EXECUTE ON FUNCTION public.fail_outbox_job TO authenticated, service_role;
 
+-- 4f. COMPLETE OUTBOX JOB (IDEMPOTENCY CLEANUP FOR ALREADY-VERIFIED PROJECTS)
+CREATE OR REPLACE FUNCTION public.complete_outbox_job(
+  _job_id uuid,
+  _tx_hash text DEFAULT NULL,
+  _record_hash text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public AS $$
+DECLARE
+  v_job public.blockchain_outbox%ROWTYPE;
+  v_rec public.blockchain_records%ROWTYPE;
+  v_now timestamptz := now();
+BEGIN
+  IF NOT (public.is_verifier() OR public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
+    RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can complete outbox jobs.';
+  END IF;
+
+  SELECT * INTO v_job FROM public.blockchain_outbox WHERE id = _job_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Outbox job not found: %', _job_id;
+  END IF;
+
+  IF _tx_hash IS NULL THEN
+    SELECT * INTO v_rec FROM public.blockchain_records WHERE project_id = v_job.project_id ORDER BY created_at DESC LIMIT 1;
+    _tx_hash := v_rec.tx_hash;
+    _record_hash := v_rec.record_hash;
+  END IF;
+
+  UPDATE public.blockchain_outbox
+  SET
+    status = 'CONFIRMED',
+    tx_hash = COALESCE(_tx_hash, tx_hash),
+    record_hash = COALESCE(_record_hash, record_hash),
+    locked_until = NULL,
+    locked_by = NULL,
+    completed_at = COALESCE(completed_at, v_now),
+    updated_at = v_now
+  WHERE id = _job_id;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION public.complete_outbox_job TO authenticated, service_role;
+
 -- 5. HARDEN PROJECTS RLS: PREVENT MODIFICATION OF VERIFIED PROJECTS BY OWNERS
 -- Project owners may only update their projects while in 'DRAFT' or 'CORRECTION_REQUIRED' status.
 -- Once SUBMITTED, UNDER_REVIEW, VERIFIED, or REJECTED, owners cannot alter the project record.
