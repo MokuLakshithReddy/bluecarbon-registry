@@ -3,9 +3,11 @@
  *
  * Implements wallet-based cryptographic authentication without storing private keys
  * or trusting unauthenticated client headers:
- * - Deterministic EIP-4361 message parsing and validation.
- * - Nonce anti-replay protection.
- * - Expiration and domain validation.
+ * - Deterministic EIP-4361 message parsing and strict format validation.
+ * - Single-use, server-issued nonce anti-replay protection with atomic consumption.
+ * - Strict ISO-8601 timestamp validation (Issued At, Not Before, Expiration Time).
+ * - Not Before time boundary enforcement.
+ * - Fail-closed error handling for malformed or expired messages.
  * - HTTP-only session cookie configuration.
  */
 
@@ -22,27 +24,156 @@ export interface SiweMessageFields {
   issuedAt: string;
   expirationTime?: string | undefined;
   notBefore?: string | undefined;
+  requestId?: string | undefined;
+  resources?: string[] | undefined;
 }
 
+export interface SiweVerificationOptions {
+  expectedDomain?: string | undefined;
+  expectedChainId?: number | undefined;
+  expectedNonce?: string | undefined;
+  enforceNonceConsumption?: boolean | undefined;
+  nowMs?: number | undefined;
+}
+
+// -----------------------------------------------------------------------------
+// Server-side Nonce Store (Anti-Replay Protection)
+// -----------------------------------------------------------------------------
+interface NonceEntry {
+  nonce: string;
+  issuedAtMs: number;
+  expiresAtMs: number;
+  boundAddress?: string | undefined;
+}
+
+const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
+const nonceStore = new Map<string, NonceEntry>();
+
+/**
+ * Issues a cryptographically random, server-tracked nonce bound to an optional address.
+ */
+export function issueSiweNonce(boundAddress?: string): string {
+  pruneExpiredNonces();
+  const randomBytes = new Uint8Array(16);
+  crypto.getRandomValues(randomBytes);
+  const nonce = [...randomBytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  nonceStore.set(nonce, {
+    nonce,
+    issuedAtMs: Date.now(),
+    expiresAtMs: Date.now() + NONCE_TTL_MS,
+    boundAddress: boundAddress ? boundAddress.toLowerCase() : undefined,
+  });
+
+  return nonce;
+}
+
+/**
+ * Atomically consumes a server-issued nonce to prevent replay attacks.
+ * Returns true if valid and consumed; false if unknown, expired, or mismatched address.
+ */
+export function consumeSiweNonce(nonce: string, address?: string, nowMs = Date.now()): boolean {
+  pruneExpiredNonces(nowMs);
+  const entry = nonceStore.get(nonce);
+  if (!entry) {
+    return false;
+  }
+
+  // Atomically delete immediately to prevent concurrent replay
+  nonceStore.delete(nonce);
+
+  if (nowMs > entry.expiresAtMs) {
+    return false;
+  }
+
+  if (entry.boundAddress && address) {
+    if (entry.boundAddress.toLowerCase() !== address.toLowerCase()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Cleans up expired nonces to prevent memory leaks.
+ */
+function pruneExpiredNonces(nowMs = Date.now()): void {
+  for (const [key, entry] of nonceStore.entries()) {
+    if (nowMs > entry.expiresAtMs) {
+      nonceStore.delete(key);
+    }
+  }
+}
+
+/**
+ * Testing utility to reset server nonce store state.
+ */
+export function _resetSiweNonceStoreForTesting(): void {
+  nonceStore.clear();
+}
+
+// -----------------------------------------------------------------------------
+// ISO-8601 Strict Validation
+// -----------------------------------------------------------------------------
+const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+export function parseAndValidateIso8601(dateStr: string, fieldName: string): number {
+  if (!ISO_8601_REGEX.test(dateStr)) {
+    throw new Error(`Invalid ISO-8601 format for ${fieldName}: '${dateStr}'`);
+  }
+  const timestamp = new Date(dateStr).getTime();
+  if (Number.isNaN(timestamp)) {
+    throw new Error(`Unparseable date value for ${fieldName}: '${dateStr}'`);
+  }
+  return timestamp;
+}
+
+// -----------------------------------------------------------------------------
+// EIP-4361 Formatting & Parsing
+// -----------------------------------------------------------------------------
 /**
  * Creates a standard EIP-4361 formatted message string.
  */
 export function formatSiweMessage(fields: SiweMessageFields): string {
-  const header = `${fields.domain} wants you to sign in with your Ethereum account:\n${fields.address}\n\n`;
-  const statement = fields.statement ? `${fields.statement}\n\n` : "";
-  const uri = `URI: ${fields.uri}\n`;
-  const version = `Version: ${fields.version}\n`;
-  const chainId = `Chain ID: ${fields.chainId}\n`;
-  const nonce = `Nonce: ${fields.nonce}\n`;
-  const issuedAt = `Issued At: ${fields.issuedAt}`;
-  const expiration = fields.expirationTime ? `\nExpiration Time: ${fields.expirationTime}` : "";
-  const notBefore = fields.notBefore ? `\nNot Before: ${fields.notBefore}` : "";
+  // Validate required timestamp format at generation time
+  parseAndValidateIso8601(fields.issuedAt, "Issued At");
+  if (fields.expirationTime) {
+    parseAndValidateIso8601(fields.expirationTime, "Expiration Time");
+  }
+  if (fields.notBefore) {
+    parseAndValidateIso8601(fields.notBefore, "Not Before");
+  }
 
-  return `${header}${statement}${uri}${version}${chainId}${nonce}${issuedAt}${expiration}${notBefore}`;
+  const lines: string[] = [
+    `${fields.domain} wants you to sign in with your Ethereum account:`,
+    fields.address,
+    "",
+  ];
+  if (fields.statement) {
+    lines.push(fields.statement, "");
+  }
+  lines.push(`URI: ${fields.uri}`);
+  lines.push(`Version: ${fields.version}`);
+  lines.push(`Chain ID: ${fields.chainId}`);
+  lines.push(`Nonce: ${fields.nonce}`);
+  lines.push(`Issued At: ${fields.issuedAt}`);
+  if (fields.expirationTime) {
+    lines.push(`Expiration Time: ${fields.expirationTime}`);
+  }
+  if (fields.notBefore) {
+    lines.push(`Not Before: ${fields.notBefore}`);
+  }
+  if (fields.requestId) {
+    lines.push(`Request ID: ${fields.requestId}`);
+  }
+
+  return lines.join("\n");
 }
 
 /**
  * Parses an EIP-4361 formatted message text into structured fields.
+ * Strictly validates message format, addresses, and ISO-8601 date fields.
  */
 export function parseSiweMessage(messageText: string): SiweMessageFields {
   const domainMatch = messageText.match(
@@ -55,67 +186,137 @@ export function parseSiweMessage(messageText: string): SiweMessageFields {
   const domain = domainMatch[1]!;
   const address = domainMatch[2]!;
 
-  const uriMatch = messageText.match(/URI: (\S+)/);
-  const versionMatch = messageText.match(/Version: (\S+)/);
-  const chainIdMatch = messageText.match(/Chain ID: ([0-9]+)/);
-  const nonceMatch = messageText.match(/Nonce: ([a-zA-Z0-9]{8,})/);
-  const issuedAtMatch = messageText.match(/Issued At: (\S+)/);
-  const expirationMatch = messageText.match(/Expiration Time: (\S+)/);
+  const uriMatch = messageText.match(/(?:^|\n)URI: (\S+)/);
+  const versionMatch = messageText.match(/(?:^|\n)Version: (\S+)/);
+  const chainIdMatch = messageText.match(/(?:^|\n)Chain ID: ([0-9]+)/);
+  const nonceMatch = messageText.match(/(?:^|\n)Nonce: ([-_a-zA-Z0-9]{8,})/);
+  const issuedAtMatch = messageText.match(/(?:^|\n)Issued At: (\S+)/);
+  const expirationMatch = messageText.match(/(?:^|\n)Expiration Time: (\S+)/);
+  const notBeforeMatch = messageText.match(/(?:^|\n)Not Before: (\S+)/);
+  const requestIdMatch = messageText.match(/(?:^|\n)Request ID: (\S+)/);
 
   if (!uriMatch || !versionMatch || !chainIdMatch || !nonceMatch || !issuedAtMatch) {
     throw new Error("Missing required SIWE fields (URI, Version, Chain ID, Nonce, or Issued At)");
+  }
+
+  const version = versionMatch[1]!;
+  if (version !== "1") {
+    throw new Error(`Unsupported SIWE version: '${version}'. Expected '1'.`);
+  }
+
+  const issuedAt = issuedAtMatch[1]!;
+  parseAndValidateIso8601(issuedAt, "Issued At");
+
+  const expirationTime = expirationMatch ? expirationMatch[1] : undefined;
+  if (expirationTime) {
+    parseAndValidateIso8601(expirationTime, "Expiration Time");
+  }
+
+  const notBefore = notBeforeMatch ? notBeforeMatch[1] : undefined;
+  if (notBefore) {
+    parseAndValidateIso8601(notBefore, "Not Before");
   }
 
   return {
     domain,
     address,
     uri: uriMatch[1]!,
-    version: versionMatch[1]!,
+    version,
     chainId: parseInt(chainIdMatch[1]!, 10),
     nonce: nonceMatch[1]!,
-    issuedAt: issuedAtMatch[1]!,
-    expirationTime: expirationMatch ? expirationMatch[1] : undefined,
+    issuedAt,
+    expirationTime,
+    notBefore,
+    requestId: requestIdMatch ? requestIdMatch[1] : undefined,
   };
 }
 
+// -----------------------------------------------------------------------------
+// Cryptographic Verification & Replay Protection
+// -----------------------------------------------------------------------------
 /**
- * Validates a signed SIWE message against an expected domain, chainId, and valid nonces.
+ * Validates a signed SIWE message against expected domain, chainId, replay nonce, and time validity.
  */
 export function verifySiweSignature(
   messageText: string,
   signatureHex: string,
-  expectedDomain: string,
-  expectedChainId?: number,
+  expectedDomainOrOptions: string | SiweVerificationOptions,
+  maybeExpectedChainId?: number,
 ): {
   isValid: boolean;
   address: string;
   error?: string | undefined;
 } {
   try {
+    const options: SiweVerificationOptions =
+      typeof expectedDomainOrOptions === "string"
+        ? {
+            expectedDomain: expectedDomainOrOptions,
+            expectedChainId: maybeExpectedChainId,
+          }
+        : expectedDomainOrOptions;
+
+    const nowMs = options.nowMs ?? Date.now();
     const fields = parseSiweMessage(messageText);
 
     // 1. Verify Domain
-    if (fields.domain.toLowerCase() !== expectedDomain.toLowerCase()) {
+    if (
+      options.expectedDomain &&
+      fields.domain.toLowerCase() !== options.expectedDomain.toLowerCase()
+    ) {
       return {
         isValid: false,
         address: fields.address,
-        error: `Domain mismatch: message domain is '${fields.domain}', expected '${expectedDomain}'`,
+        error: `Domain mismatch: message domain is '${fields.domain}', expected '${options.expectedDomain}'`,
       };
     }
 
-    // 2. Verify Chain ID if configured
-    if (expectedChainId && fields.chainId !== expectedChainId) {
+    // 2. Verify Chain ID
+    if (options.expectedChainId && fields.chainId !== options.expectedChainId) {
       return {
         isValid: false,
         address: fields.address,
-        error: `Chain ID mismatch: message chain ID is ${fields.chainId}, expected ${expectedChainId}`,
+        error: `Chain ID mismatch: message chain ID is ${fields.chainId}, expected ${options.expectedChainId}`,
       };
     }
 
-    // 3. Check Expiration
+    // 3. Verify Nonce Matching
+    if (options.expectedNonce && fields.nonce !== options.expectedNonce) {
+      return {
+        isValid: false,
+        address: fields.address,
+        error: `Nonce mismatch: message nonce is '${fields.nonce}', expected '${options.expectedNonce}'`,
+      };
+    }
+
+    // 4. Nonce Replay Protection: Atomically consume if configured or if nonce exists in store
+    if (options.enforceNonceConsumption || nonceStore.has(fields.nonce)) {
+      const consumed = consumeSiweNonce(fields.nonce, fields.address, nowMs);
+      if (!consumed) {
+        return {
+          isValid: false,
+          address: fields.address,
+          error: "SIWE nonce invalid, expired, or already consumed (replay prevented)",
+        };
+      }
+    }
+
+    // 5. Strict Time Boundary Checks: Not Before
+    if (fields.notBefore) {
+      const notBeforeMs = parseAndValidateIso8601(fields.notBefore, "Not Before");
+      if (nowMs < notBeforeMs) {
+        return {
+          isValid: false,
+          address: fields.address,
+          error: `SIWE session is not yet active (Not Before: ${fields.notBefore})`,
+        };
+      }
+    }
+
+    // 6. Strict Time Boundary Checks: Expiration
     if (fields.expirationTime) {
-      const expTime = new Date(fields.expirationTime).getTime();
-      if (!Number.isNaN(expTime) && Date.now() >= expTime) {
+      const expTimeMs = parseAndValidateIso8601(fields.expirationTime, "Expiration Time");
+      if (nowMs >= expTimeMs) {
         return {
           isValid: false,
           address: fields.address,
@@ -124,7 +325,7 @@ export function verifySiweSignature(
       }
     }
 
-    // 4. Verify Cryptographic Signature
+    // 7. Verify Cryptographic Signature
     const recovered = ethers.verifyMessage(messageText, signatureHex);
     if (recovered.toLowerCase() !== fields.address.toLowerCase()) {
       return {

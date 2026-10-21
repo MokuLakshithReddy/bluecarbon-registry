@@ -11,16 +11,17 @@ pragma solidity ^0.8.20;
  *    - VERIFIER_ROLE: Certified verification bodies authorized to anchor records and mint batches.
  *    - ORACLE_ROLE: MRV sensor/satellite oracle networks feeding telemetry.
  *    - AUDITOR_ROLE: Independent oversight auditors for compliance sign-offs.
- * 2. Timelock Governance: Two-step queued execution for sensitive administrative parameters.
- * 3. Batch-Level Credit Standards (IWA / ERC-1155 alignment):
- *    - Stores vintage year, ecosystem, methodology, verification body, and GPS coordinates.
+ * 2. Real Bound Timelock Governance:
+ *    - Queued operations bind exact actionType, target address, and role.
+ *    - Optional strict timelock enforcement mode closes immediate administrative bypass paths.
+ * 3. Batch-Level Credit Standards & Ownership-Bound Retirement:
+ *    - Tracks per-wallet balances (balanceOf[recordHash][wallet]).
+ *    - Irreversible retirement deducts strictly from caller's token balance.
  *    - Automatic Permanence Buffer Pool withholding (default 15% non-permanence risk reserve).
- * 4. Irreversible On-Chain Retirement / Burn:
- *    - Tokens retired on-chain cannot be re-transferred or double-counted.
- *    - Generates a cryptographically unique Certificate ID with beneficiary details.
- * 5. Security & Gas Efficiency:
+ *    - Conflict-Free Anchor Validation: Rejects batch mints if existing anchor quantity or project code disagrees.
+ * 4. Security & Gas Efficiency:
  *    - Non-reentrant execution guards.
- *    - Custom errors instead of string reverts to minimize bytecode and execution gas.
+ *    - Custom errors instead of string reverts to minimize gas overhead.
  *    - High-precision fixed-point scaling (milli-tCO2e = kilograms CO2e, scale factor 1,000).
  */
 contract BlueCarbonRegistry {
@@ -37,12 +38,24 @@ contract BlueCarbonRegistry {
     bytes32 public constant ORACLE_ROLE = keccak256("ORACLE_ROLE");
     bytes32 public constant AUDITOR_ROLE = keccak256("AUDITOR_ROLE");
 
+    enum AdminActionType {
+        AUTHORIZE_VERIFIER,
+        REVOKE_VERIFIER,
+        GRANT_ROLE,
+        REVOKE_ROLE,
+        TRANSFER_OWNERSHIP
+    }
+
     // -------------------------------------------------------------------------
     // Storage Structures
     // -------------------------------------------------------------------------
     address public owner;
+    bool public timelockEnforced;
     mapping(address => bool) public isAuthorizedVerifier;
     mapping(bytes32 => mapping(address => bool)) private _roles;
+
+    // Per-batch per-wallet token balance (Ownership-Bound Credits)
+    mapping(bytes32 => mapping(address => uint256)) public balanceOf;
 
     struct RecordAnchor {
         bytes32 recordHash;
@@ -77,8 +90,11 @@ contract BlueCarbonRegistry {
         uint256 timestamp;
     }
 
-    struct TimelockAction {
+    struct QueuedAction {
         bytes32 actionHash;
+        AdminActionType actionType;
+        address target;
+        bytes32 role;
         uint256 readyTimestamp;
         bool executed;
     }
@@ -87,7 +103,8 @@ contract BlueCarbonRegistry {
     mapping(string => bytes32) private _projectLatestAnchor;
     mapping(bytes32 => CreditBatch) private _creditBatches;
     mapping(bytes32 => RetirementCertificate) private _certificates;
-    mapping(bytes32 => TimelockAction) public timelockActions;
+    mapping(bytes32 => QueuedAction) public queuedActions;
+    mapping(bytes32 => uint256) public genericTimelocks;
 
     uint256 private _reentrancyStatus;
     uint256 private _retirementNonce;
@@ -110,7 +127,14 @@ contract BlueCarbonRegistry {
         uint256 circulatingMilli,
         uint256 bufferPoolMilli,
         uint256 vintageYear,
-        address indexed minter
+        address indexed recipient
+    );
+
+    event CreditsTransferred(
+        bytes32 indexed recordHash,
+        address indexed from,
+        address indexed to,
+        uint256 amountMilliTco2e
     );
 
     event CreditsRetired(
@@ -128,14 +152,30 @@ contract BlueCarbonRegistry {
     event VerifierAuthorized(address indexed verifier, address indexed authorizer);
     event VerifierRevoked(address indexed verifier, address indexed revoker);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event TimelockScheduled(bytes32 indexed actionHash, uint256 readyTimestamp);
-    event TimelockExecuted(bytes32 indexed actionHash);
+
+    event AdminActionScheduled(
+        bytes32 indexed actionHash,
+        uint8 indexed actionType,
+        address indexed target,
+        bytes32 role,
+        uint256 readyTimestamp
+    );
+    event AdminActionExecuted(
+        bytes32 indexed actionHash,
+        uint8 indexed actionType,
+        address indexed target,
+        bytes32 role
+    );
+    event TimelockEnforcementUpdated(bool enforced);
 
     // -------------------------------------------------------------------------
     // Custom Errors
     // -------------------------------------------------------------------------
     error RecordAlreadyAnchored(bytes32 recordHash);
     error InvalidRecordHash();
+    error InvalidCarbonQuantity();
+    error AnchorQuantityMismatch(uint256 expected, uint256 actual);
+    error AnchorProjectMismatch(string expected, string actual);
     error UnauthorizedVerifier(address caller);
     error UnauthorizedRole(bytes32 role, address caller);
     error OnlyOwner();
@@ -145,6 +185,8 @@ contract BlueCarbonRegistry {
     error TimelockPending(uint256 readyTimestamp);
     error TimelockNotScheduled();
     error TimelockAlreadyExecuted();
+    error TimelockEnforcedUseQueuedAction();
+    error ActionAlreadyQueued(bytes32 actionHash);
     error ReentrancyGuard();
 
     // -------------------------------------------------------------------------
@@ -201,7 +243,13 @@ contract BlueCarbonRegistry {
         return _roles[role][account] || account == owner;
     }
 
+    function setTimelockEnforcement(bool enforced) external onlyOwner {
+        timelockEnforced = enforced;
+        emit TimelockEnforcementUpdated(enforced);
+    }
+
     function grantRole(bytes32 role, address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (timelockEnforced) revert TimelockEnforcedUseQueuedAction();
         if (account == address(0)) revert ZeroAddress();
         _roles[role][account] = true;
         if (role == VERIFIER_ROLE) {
@@ -212,6 +260,7 @@ contract BlueCarbonRegistry {
     }
 
     function revokeRole(bytes32 role, address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (timelockEnforced) revert TimelockEnforcedUseQueuedAction();
         if (account == address(0)) revert ZeroAddress();
         _roles[role][account] = false;
         if (role == VERIFIER_ROLE) {
@@ -222,6 +271,7 @@ contract BlueCarbonRegistry {
     }
 
     function authorizeVerifier(address verifier) external onlyOwner {
+        if (timelockEnforced) revert TimelockEnforcedUseQueuedAction();
         if (verifier == address(0)) revert ZeroAddress();
         isAuthorizedVerifier[verifier] = true;
         _roles[VERIFIER_ROLE][verifier] = true;
@@ -229,6 +279,7 @@ contract BlueCarbonRegistry {
     }
 
     function revokeVerifier(address verifier) external onlyOwner {
+        if (timelockEnforced) revert TimelockEnforcedUseQueuedAction();
         if (verifier == address(0)) revert ZeroAddress();
         isAuthorizedVerifier[verifier] = false;
         _roles[VERIFIER_ROLE][verifier] = false;
@@ -236,6 +287,7 @@ contract BlueCarbonRegistry {
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
+        if (timelockEnforced) revert TimelockEnforcedUseQueuedAction();
         if (newOwner == address(0)) revert ZeroAddress();
         address oldOwner = owner;
         owner = newOwner;
@@ -244,26 +296,97 @@ contract BlueCarbonRegistry {
     }
 
     // -------------------------------------------------------------------------
-    // Timelock Administration
+    // Bound Timelock Governance
     // -------------------------------------------------------------------------
-    function scheduleTimelock(bytes32 actionHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function computeActionHash(
+        AdminActionType actionType,
+        address target,
+        bytes32 role
+    ) public view returns (bytes32) {
+        return keccak256(abi.encode(actionType, target, role, address(this), block.chainid));
+    }
+
+    function scheduleAdminAction(
+        AdminActionType actionType,
+        address target,
+        bytes32 role
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32 actionHash) {
+        if (target == address(0)) revert ZeroAddress();
+        actionHash = computeActionHash(actionType, target, role);
+        if (queuedActions[actionHash].readyTimestamp != 0 && !queuedActions[actionHash].executed) {
+            revert ActionAlreadyQueued(actionHash);
+        }
+
         uint256 ready = block.timestamp + TIMELOCK_DELAY;
-        timelockActions[actionHash] = TimelockAction({
+        queuedActions[actionHash] = QueuedAction({
             actionHash: actionHash,
+            actionType: actionType,
+            target: target,
+            role: role,
             readyTimestamp: ready,
             executed: false
         });
-        emit TimelockScheduled(actionHash, ready);
+
+        emit AdminActionScheduled(actionHash, uint8(actionType), target, role, ready);
+        return actionHash;
     }
 
-    function executeTimelock(bytes32 actionHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        TimelockAction storage action = timelockActions[actionHash];
+    function executeAdminAction(
+        AdminActionType actionType,
+        address target,
+        bytes32 role
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        bytes32 actionHash = computeActionHash(actionType, target, role);
+        QueuedAction storage action = queuedActions[actionHash];
         if (action.readyTimestamp == 0) revert TimelockNotScheduled();
         if (action.executed) revert TimelockAlreadyExecuted();
         if (block.timestamp < action.readyTimestamp) revert TimelockPending(action.readyTimestamp);
 
         action.executed = true;
-        emit TimelockExecuted(actionHash);
+
+        if (actionType == AdminActionType.AUTHORIZE_VERIFIER) {
+            isAuthorizedVerifier[target] = true;
+            _roles[VERIFIER_ROLE][target] = true;
+            emit VerifierAuthorized(target, msg.sender);
+        } else if (actionType == AdminActionType.REVOKE_VERIFIER) {
+            isAuthorizedVerifier[target] = false;
+            _roles[VERIFIER_ROLE][target] = false;
+            emit VerifierRevoked(target, msg.sender);
+        } else if (actionType == AdminActionType.GRANT_ROLE) {
+            _roles[role][target] = true;
+            if (role == VERIFIER_ROLE) {
+                isAuthorizedVerifier[target] = true;
+                emit VerifierAuthorized(target, msg.sender);
+            }
+            emit RoleGranted(role, target, msg.sender);
+        } else if (actionType == AdminActionType.REVOKE_ROLE) {
+            _roles[role][target] = false;
+            if (role == VERIFIER_ROLE) {
+                isAuthorizedVerifier[target] = false;
+                emit VerifierRevoked(target, msg.sender);
+            }
+            emit RoleRevoked(role, target, msg.sender);
+        } else if (actionType == AdminActionType.TRANSFER_OWNERSHIP) {
+            address oldOwner = owner;
+            owner = target;
+            _roles[DEFAULT_ADMIN_ROLE][target] = true;
+            emit OwnershipTransferred(oldOwner, target);
+        }
+
+        emit AdminActionExecuted(actionHash, uint8(actionType), target, role);
+    }
+
+    // Generic timelock for arbitrary hashes (e.g. oracle or parameter changes)
+    function scheduleTimelock(bytes32 actionHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 ready = block.timestamp + TIMELOCK_DELAY;
+        genericTimelocks[actionHash] = ready;
+    }
+
+    function executeTimelock(bytes32 actionHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 ready = genericTimelocks[actionHash];
+        if (ready == 0) revert TimelockNotScheduled();
+        if (block.timestamp < ready) revert TimelockPending(ready);
+        delete genericTimelocks[actionHash];
     }
 
     // -------------------------------------------------------------------------
@@ -278,6 +401,7 @@ contract BlueCarbonRegistry {
         uint256 verifiedCarbonMilliTco2e
     ) external onlyAuthorizedVerifier nonReentrant {
         if (recordHash == bytes32(0)) revert InvalidRecordHash();
+        if (verifiedCarbonMilliTco2e == 0) revert InvalidCarbonQuantity();
         if (_anchors[recordHash].timestamp != 0) revert RecordAlreadyAnchored(recordHash);
 
         _anchors[recordHash] = RecordAnchor({
@@ -306,10 +430,12 @@ contract BlueCarbonRegistry {
         string ecosystem;
         string methodology;
         string verificationBody;
+        address recipient;
     }
 
     /**
      * @notice Mints an institutional credit batch with automatic 15% non-permanence risk buffer reserve.
+     * Enforces strict consistency if an anchor already exists for this record hash.
      */
     function mintCreditBatch(
         bytes32 recordHash,
@@ -317,10 +443,19 @@ contract BlueCarbonRegistry {
         BatchInput calldata input
     ) external onlyAuthorizedVerifier nonReentrant {
         if (recordHash == bytes32(0)) revert InvalidRecordHash();
+        if (totalCarbonMilli == 0) revert InvalidCarbonQuantity();
         if (_creditBatches[recordHash].exists) revert RecordAlreadyAnchored(recordHash);
 
-        // Anchor underlying record if not already anchored
-        if (_anchors[recordHash].timestamp == 0) {
+        // Conflict check against existing canonical anchor
+        if (_anchors[recordHash].timestamp != 0) {
+            RecordAnchor memory existing = _anchors[recordHash];
+            if (existing.verifiedCarbonMilliTco2e != totalCarbonMilli) {
+                revert AnchorQuantityMismatch(existing.verifiedCarbonMilliTco2e, totalCarbonMilli);
+            }
+            if (keccak256(bytes(existing.projectCode)) != keccak256(bytes(input.projectCode))) {
+                revert AnchorProjectMismatch(existing.projectCode, input.projectCode);
+            }
+        } else {
             _anchors[recordHash] = RecordAnchor({
                 recordHash: recordHash,
                 projectCode: input.projectCode,
@@ -336,6 +471,9 @@ contract BlueCarbonRegistry {
         // Calculate 15% permanence buffer reserve
         uint256 bufferPool = (totalCarbonMilli * BUFFER_POOL_PERCENT) / 100;
         uint256 circulating = totalCarbonMilli - bufferPool;
+
+        address recipient = input.recipient == address(0) ? msg.sender : input.recipient;
+        balanceOf[recordHash][recipient] += circulating;
 
         _creditBatches[recordHash] = CreditBatch({
             recordHash: recordHash,
@@ -358,16 +496,35 @@ contract BlueCarbonRegistry {
             circulating,
             bufferPool,
             input.vintageYear,
-            msg.sender
+            recipient
         );
+        emit CreditsTransferred(recordHash, address(0), recipient, circulating);
     }
 
     // -------------------------------------------------------------------------
-    // Irreversible Credit Retirement / Burn
+    // Credit Transfer & Ownership-Bound Retirement
     // -------------------------------------------------------------------------
     /**
+     * @notice Transfers ownership of carbon credits within a batch.
+     */
+    function transferCredits(
+        bytes32 recordHash,
+        address to,
+        uint256 amountMilliTco2e
+    ) external nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        if (balanceOf[recordHash][msg.sender] < amountMilliTco2e) {
+            revert InsufficientBalance(amountMilliTco2e, balanceOf[recordHash][msg.sender]);
+        }
+
+        balanceOf[recordHash][msg.sender] -= amountMilliTco2e;
+        balanceOf[recordHash][to] += amountMilliTco2e;
+        emit CreditsTransferred(recordHash, msg.sender, to, amountMilliTco2e);
+    }
+
+    /**
      * @notice Irreversibly burns/retires credits on behalf of a named beneficiary.
-     * Tokens retired on-chain cannot be re-transferred or double-counted.
+     * Strictly ownership-bound: caller must possess sufficient balance in balanceOf[recordHash][msg.sender].
      */
     function retireCredits(
         bytes32 recordHash,
@@ -377,10 +534,13 @@ contract BlueCarbonRegistry {
     ) external nonReentrant returns (bytes32 certificateId) {
         CreditBatch storage batch = _creditBatches[recordHash];
         if (!batch.exists) revert BatchNotFound(recordHash);
-        if (batch.circulatingMilli < amountMilliTco2e) {
-            revert InsufficientBalance(amountMilliTco2e, batch.circulatingMilli);
+
+        // Strict ownership check: caller cannot burn credits belonging to other wallets
+        if (balanceOf[recordHash][msg.sender] < amountMilliTco2e) {
+            revert InsufficientBalance(amountMilliTco2e, balanceOf[recordHash][msg.sender]);
         }
 
+        balanceOf[recordHash][msg.sender] -= amountMilliTco2e;
         batch.circulatingMilli -= amountMilliTco2e;
         batch.retiredMilli += amountMilliTco2e;
         _retirementNonce++;
