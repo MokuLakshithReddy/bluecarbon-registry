@@ -187,7 +187,16 @@ export async function runSmokeTests(
         });
 
         // 5a. Chain ID verification
-        if (hasBlock) {
+        // 5a. Chain ID verification
+        if (!expectedChainId && options.requireProductionServices) {
+          checks.push({
+            name: "Blockchain Chain ID Configuration",
+            passed: false,
+            durationMs: 0,
+            details:
+              "FAIL: BLOCKCHAIN_CHAIN_ID is required in release validation mode to prevent wrong network anchoring",
+          });
+        } else if (hasBlock) {
           const chainIdPayload = JSON.stringify({
             jsonrpc: "2.0",
             method: "eth_chainId",
@@ -211,12 +220,12 @@ export async function runSmokeTests(
             passed: chainRes.status === 200 && Boolean(actualChainId) && chainMatch,
             durationMs: Date.now() - bStart,
             details: actualChainId
-              ? `Chain ID: ${actualChainId}${expectedChainId ? ` (expected ${expectedChainId})` : ""}`
+              ? `Chain ID: ${actualChainId}${expectedChainId ? ` (expected ${expectedChainId}, match: ${chainMatch})` : ""}`
               : "Unable to retrieve eth_chainId",
           });
         }
 
-        // 5b. Contract bytecode verification
+        // 5b. Contract bytecode verification and read-only interface check
         if (!contractAddress && options.requireProductionServices) {
           checks.push({
             name: "Blockchain Contract Code Presence",
@@ -253,6 +262,46 @@ export async function runSmokeTests(
               ? `Contract bytecode present at ${contractAddress}`
               : `No contract code deployed at ${contractAddress}`,
           });
+
+          // 5c. Read-only contract call: CARBON_DECIMALS() getter (selector 0x140e6988)
+          if (hasCode) {
+            const callStart = Date.now();
+            try {
+              // CARBON_DECIMALS() public constant getter selector: bytes4(keccak256("CARBON_DECIMALS()")) = 0x140e6988
+              const callPayload = JSON.stringify({
+                jsonrpc: "2.0",
+                method: "eth_call",
+                params: [{ to: contractAddress, data: "0x140e6988" }, "latest"],
+                id: 4,
+              });
+              const callRes = await fetch(rpcUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: callPayload,
+                signal: AbortSignal.timeout(5000),
+              });
+              const callJson = (await callRes.json()) as { result?: string };
+              // Decimals should return uint8 = 3 (0x...03)
+              const decimalsValue = callJson.result ? parseInt(callJson.result, 16) : null;
+              const isCorrectRegistry = decimalsValue === 3;
+
+              checks.push({
+                name: "Blockchain Contract Interface (CARBON_DECIMALS)",
+                passed: isCorrectRegistry,
+                durationMs: Date.now() - callStart,
+                details: isCorrectRegistry
+                  ? "Registry interface verified: CARBON_DECIMALS = 3"
+                  : `Unexpected contract response: ${callJson.result ?? "no result"}`,
+              });
+            } catch (err) {
+              checks.push({
+                name: "Blockchain Contract Interface (CARBON_DECIMALS)",
+                passed: false,
+                durationMs: Date.now() - callStart,
+                details: `Contract eth_call error: ${String(err)}`,
+              });
+            }
+          }
         }
       } catch (err) {
         checks.push({

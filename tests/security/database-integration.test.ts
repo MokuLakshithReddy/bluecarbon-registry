@@ -626,14 +626,20 @@ test("DB Integration: complete_outbox_job explicitly marks job complete and clea
     VALUES ('${jobId}', '${projectId}', '{"test": 1}'::jsonb, 'PENDING', 'stale-worker', now() + interval '5 minutes');
   `);
 
-  // 1. Non-verifier cannot complete outbox job
+  // 1. Authenticated user (non-service-role) cannot execute complete_outbox_job (permission revoked)
   await setSessionContext(db, "authenticated", nonVerifierId);
   await assert.rejects(async () => {
     await db.query(`SELECT public.complete_outbox_job('${jobId}');`);
-  }, /Unauthorized: Only verifiers or service-role can complete outbox jobs/);
+  }, /permission denied for function complete_outbox_job/);
 
-  // 2. Verifier completes outbox job (cleanup)
+  // Verifier without service-role is also blocked from direct RPC completion
   await setSessionContext(db, "authenticated", verifierId);
+  await assert.rejects(async () => {
+    await db.query(`SELECT public.complete_outbox_job('${jobId}');`);
+  }, /permission denied for function complete_outbox_job/);
+
+  // 2. Service-role background worker completes outbox job (cleanup)
+  await setSessionContext(db, "service_role");
   await db.query(`SELECT public.complete_outbox_job('${jobId}');`);
 
   const jobRes = await db.query(`
@@ -650,4 +656,15 @@ test("DB Integration: complete_outbox_job explicitly marks job complete and clea
   assert.ok(completedJob.completed_at != null);
   assert.strictEqual(completedJob.tx_hash, txHash);
   assert.strictEqual(completedJob.record_hash, recordHash);
+
+  // 3. Fabricated hash check: service-role attempting to complete with unverified tx_hash fails
+  const unverifiedTxHash = "0x" + "f".repeat(64);
+  const bogusJobId = "22222222-3333-4444-5555-666666666666";
+  await db.exec(`
+    INSERT INTO public.blockchain_outbox (id, project_id, payload, status)
+    VALUES ('${bogusJobId}', '${projectId}', '{"test": 2}'::jsonb, 'PENDING');
+  `);
+  await assert.rejects(async () => {
+    await db.query(`SELECT public.complete_outbox_job('${bogusJobId}', '${unverifiedTxHash}');`);
+  }, /Integrity Error: Cannot complete outbox job with unverified transaction hash/);
 });

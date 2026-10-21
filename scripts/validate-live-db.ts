@@ -309,19 +309,24 @@ export async function validateLiveDatabase(): Promise<{
       const { error } = await ownerClient.from("user_roles").insert({
         role: "admin",
       } as never);
-      const blocked = error != null;
+      // Authorization violation: 42501 (insufficient_privilege) or PGRST error
+      const isAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("policy"));
       results.push({
         step: "Authenticated Owner: Self-promotion to admin rejected",
-        passed: blocked,
-        details: blocked
-          ? `Privilege escalation blocked as expected: ${error?.message}`
-          : "FAILURE: Owner was able to insert into user_roles!",
+        passed: isAuthDenied,
+        details: isAuthDenied
+          ? `Privilege escalation blocked as expected (code: ${error?.code}): ${error?.message}`
+          : `FAILURE: Expected authorization denial (42501), got: ${error ? error.message : "INSERT succeeded"}`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "Authenticated Owner: Self-promotion to admin rejected",
-        passed: true,
-        details: "Privilege escalation attempt rejected.",
+        passed: false,
+        details: `Unexpected network/system exception during test: ${String(err)}`,
       });
     }
 
@@ -335,53 +340,81 @@ export async function validateLiveDatabase(): Promise<{
           _notes: "Owner self-approval exploit attempt",
         } as never,
       );
-      const blocked = error != null;
+      const isAuthDenied =
+        Boolean(error) &&
+        (error?.message.includes("Unauthorized") ||
+          error?.message.includes("Only verifiers") ||
+          error?.code === "42501" ||
+          error?.code === "P0001");
       results.push({
         step: "Authenticated Owner: Cannot invoke perform_verification_decision",
-        passed: blocked,
-        details: blocked
+        passed: isAuthDenied,
+        details: isAuthDenied
           ? `Verifier RPC rejected for non-verifier owner as expected: ${error?.message}`
-          : "FAILURE: Owner was able to invoke perform_verification_decision!",
+          : `FAILURE: Expected authorization failure, got: ${error ? error.message : "RPC succeeded"}`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "Authenticated Owner: Cannot invoke perform_verification_decision",
-        passed: true,
-        details: "Privileged verifier RPC rejected for owner.",
+        passed: false,
+        details: `Unexpected network/system exception during test: ${String(err)}`,
       });
     }
 
     // 5c. Owner CANNOT view private evidence belonging to another project ID
-    // Find an actual existing project owned by another user via service role to test real isolation
-    let foreignProjectId = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    // Find an actual existing project that HAS private evidence via service role
+    let foreignProjectId: string | null = null;
+    let foreignEvidenceCount = 0;
     try {
-      const { data: foreignProjects } = await supabase.from("projects").select("id").limit(5);
-      if (foreignProjects && foreignProjects.length > 0) {
-        foreignProjectId = foreignProjects[foreignProjects.length - 1]!.id;
+      const { data: evidenceRows } = await supabase
+        .from("evidence")
+        .select("project_id, is_public")
+        .eq("is_public", false)
+        .limit(1);
+
+      if (evidenceRows && evidenceRows.length > 0) {
+        foreignProjectId = evidenceRows[0]!.project_id;
+        const { count } = await supabase
+          .from("evidence")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", foreignProjectId)
+          .eq("is_public", false);
+        foreignEvidenceCount = count ?? 0;
       }
     } catch {
-      // fallback to UUID
+      // fallback
     }
 
-    try {
-      const { data, error } = await ownerClient
-        .from("evidence")
-        .select("id, file_url")
-        .eq("project_id", foreignProjectId);
-      const noLeak = error != null || !data || data.length === 0;
+    if (!foreignProjectId || foreignEvidenceCount === 0) {
       results.push({
         step: "Authenticated Owner: Cross-project private evidence read blocked",
-        passed: noLeak,
-        details: noLeak
-          ? `No foreign evidence visible to owner session for project ${foreignProjectId}.`
-          : "FAILURE: Foreign project private evidence returned to owner!",
+        passed: !isReleaseMode,
+        details: isReleaseMode
+          ? "FAIL: No private evidence fixture found in database to prove cross-project isolation."
+          : "SKIPPED: No private evidence fixtures present to verify isolation (dev mode).",
       });
-    } catch {
-      results.push({
-        step: "Authenticated Owner: Cross-project private evidence read blocked",
-        passed: true,
-        details: "Foreign project evidence read blocked.",
-      });
+    } else {
+      try {
+        const { data, error } = await ownerClient
+          .from("evidence")
+          .select("id, file_url")
+          .eq("project_id", foreignProjectId);
+
+        const noLeak = !error && (!data || data.length === 0);
+        results.push({
+          step: "Authenticated Owner: Cross-project private evidence read blocked",
+          passed: noLeak,
+          details: noLeak
+            ? `Verified isolation: target project has ${foreignEvidenceCount} private records under service-role, but owner sees 0.`
+            : `FAILURE: Owner retrieved ${data?.length} private records or received error: ${error?.message}`,
+        });
+      } catch (err) {
+        results.push({
+          step: "Authenticated Owner: Cross-project private evidence read blocked",
+          passed: false,
+          details: `Unexpected network error during isolation check: ${String(err)}`,
+        });
+      }
     }
   } else {
     results.push({

@@ -909,7 +909,9 @@ END; $$;
 
 GRANT EXECUTE ON FUNCTION public.fail_outbox_job TO authenticated, service_role;
 
--- 4f. COMPLETE OUTBOX JOB (IDEMPOTENCY CLEANUP FOR ALREADY-VERIFIED PROJECTS)
+-- 4f. COMPLETE OUTBOX JOB (STRICT SERVICE-ROLE BOUNDARY & RECORD VERIFICATION)
+-- Prevents privileged or unauthenticated callers from fabricating blockchain confirmations.
+-- Must be invoked by service-role, and if tx_hash is provided, it must match an existing verified blockchain_record.
 CREATE OR REPLACE FUNCTION public.complete_outbox_job(
   _job_id uuid,
   _tx_hash text DEFAULT NULL,
@@ -924,8 +926,9 @@ DECLARE
   v_rec public.blockchain_records%ROWTYPE;
   v_now timestamptz := now();
 BEGIN
-  IF NOT (public.is_verifier() OR public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
-    RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can complete outbox jobs.';
+  -- Strict boundary: Only service-role (the background worker) or admin may complete outbox jobs
+  IF NOT (public.is_service_role() OR public.has_role(auth.uid(), 'admin')) THEN
+    RAISE EXCEPTION 'Unauthorized: Only service-role background worker can complete outbox jobs.';
   END IF;
 
   SELECT * INTO v_job FROM public.blockchain_outbox WHERE id = _job_id FOR UPDATE;
@@ -933,8 +936,21 @@ BEGIN
     RAISE EXCEPTION 'Outbox job not found: %', _job_id;
   END IF;
 
-  IF _tx_hash IS NULL THEN
-    SELECT * INTO v_rec FROM public.blockchain_records WHERE project_id = v_job.project_id ORDER BY created_at DESC LIMIT 1;
+  -- Validate that confirmation corresponds to a genuine existing blockchain_records entry
+  IF _tx_hash IS NOT NULL THEN
+    SELECT * INTO v_rec FROM public.blockchain_records
+    WHERE project_id = v_job.project_id AND tx_hash = _tx_hash AND status = 'CONFIRMED'
+    LIMIT 1;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Integrity Error: Cannot complete outbox job with unverified transaction hash %', _tx_hash;
+    END IF;
+  ELSE
+    SELECT * INTO v_rec FROM public.blockchain_records
+    WHERE project_id = v_job.project_id AND status = 'CONFIRMED'
+    ORDER BY created_at DESC LIMIT 1;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Integrity Error: No confirmed blockchain record found for project %', v_job.project_id;
+    END IF;
     _tx_hash := v_rec.tx_hash;
     _record_hash := v_rec.record_hash;
   END IF;
@@ -942,8 +958,8 @@ BEGIN
   UPDATE public.blockchain_outbox
   SET
     status = 'CONFIRMED',
-    tx_hash = COALESCE(_tx_hash, tx_hash),
-    record_hash = COALESCE(_record_hash, record_hash),
+    tx_hash = _tx_hash,
+    record_hash = COALESCE(_record_hash, v_rec.record_hash),
     locked_until = NULL,
     locked_by = NULL,
     completed_at = COALESCE(completed_at, v_now),
@@ -951,7 +967,9 @@ BEGIN
   WHERE id = _job_id;
 END; $$;
 
-GRANT EXECUTE ON FUNCTION public.complete_outbox_job TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.complete_outbox_job FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.complete_outbox_job FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.complete_outbox_job TO service_role;
 
 -- 5. HARDEN PROJECTS RLS: PREVENT MODIFICATION OF VERIFIED PROJECTS BY OWNERS
 -- Project owners may only update their projects while in 'DRAFT' or 'CORRECTION_REQUIRED' status.

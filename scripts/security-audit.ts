@@ -41,6 +41,29 @@ const IGNORED_PATHS = [
   "tests/blockchain/blockchain-resilience.test.ts",
 ];
 
+const SYNTHETIC_MOCK_HEX_STRINGS = [
+  "00000000000000000000000000000000",
+  "your-key-here",
+  "your-service-role-key-here",
+  "[REDACTED",
+  "TEST_SIGNER_KEY",
+  "TEST_CONTRACT_ADDRESS",
+  "0x0123456789abcdef",
+  "0x1234567890abcdef",
+  "0xabcdef1234567890",
+  "0xaaaaaaaaaaaaaaaa",
+  "0xbbbbbbbbbbbbbbbb",
+  "0x9999999999999999",
+  "0x8888888888888888",
+  "0x1dcc4de8dec75d7a",
+  "0x56e81f171bcc55a6",
+  "0xd5855eb95b30d525",
+];
+
+function isSyntheticFixture(text: string): boolean {
+  return SYNTHETIC_MOCK_HEX_STRINGS.some((s) => text.includes(s));
+}
+
 function scanDirectory(dir: string): Finding[] {
   const findings: Finding[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -71,10 +94,9 @@ function scanDirectory(dir: string): Finding[] {
         const line = lines[i]!;
         // Skip obvious dummy placeholder comments / examples
         if (
-          line.includes("00000000000000000000000000000000") ||
-          line.includes("your-key-here") ||
-          line.includes("[REDACTED") ||
+          isSyntheticFixture(line) ||
           relPath.endsWith(".example") ||
+          relPath.includes("security-audit.ts") || // Self file
           relPath.includes("observability.ts") // Pattern definition file
         ) {
           continue;
@@ -92,61 +114,78 @@ function scanDirectory(dir: string): Finding[] {
   return findings;
 }
 
-export function scanGitHistory(): Finding[] {
+export function scanGitHistory(): { findings: Finding[]; error?: string } {
   const historyFindings: Finding[] = [];
   try {
-    // Check if git is available and repo has commits
-    const logOutput = execSync("git log -p -n 50 --max-count=50", {
+    // Verify git repository existence
+    execSync("git rev-parse --is-inside-work-tree", { stdio: ["ignore", "pipe", "pipe"] });
+
+    // Scan full commit history across all branches
+    const logOutput = execSync("git log -p --full-history", {
       encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 10 * 1024 * 1024,
     });
 
     const lines = logOutput.split("\n");
     let currentCommit = "HEAD";
+    let currentFile = "";
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!;
       if (line.startsWith("commit ")) {
         currentCommit = line.substring(7, 15);
+      } else if (line.startsWith("diff --git a/")) {
+        const match = line.match(/diff --git a\/(.+) b\//);
+        currentFile = match ? match[1]! : "";
       }
       if (!line.startsWith("+") || line.startsWith("+++")) continue;
 
-      const addedContent = line.substring(1);
+      // Skip test mocks and fixture files that intentionally contain mock keys
       if (
-        addedContent.includes("00000000000000000000000000000000") ||
-        addedContent.includes("your-key-here") ||
-        addedContent.includes("[REDACTED") ||
-        addedContent.includes("SECRET_REGEXES") ||
-        addedContent.includes("observability.ts")
+        currentFile.includes("tests/blockchain/") ||
+        currentFile.includes("tests/security/") ||
+        currentFile.includes("scripts/security-audit.ts") ||
+        currentFile.includes("src/lib/observability.ts")
       ) {
+        continue;
+      }
+
+      const addedContent = line.substring(1);
+      if (isSyntheticFixture(addedContent)) {
         continue;
       }
 
       for (const { name, regex } of SECRET_REGEXES) {
         if (regex.test(addedContent)) {
           historyFindings.push({
-            file: `git:commit:${currentCommit}`,
+            file: `git:commit:${currentCommit}:${currentFile}`,
             line: i + 1,
             pattern: name,
           });
         }
       }
     }
-  } catch {
-    // Non-git environment or git command unavailable in minimal container
+  } catch (err) {
+    const isGitRepo = fs.existsSync(path.join(process.cwd(), ".git"));
+    if (isGitRepo) {
+      // Fail closed: Git repository is present but history scan failed
+      return { findings: [], error: `Git history inspection failed: ${String(err)}` };
+    }
   }
 
-  return historyFindings;
+  return { findings: historyFindings };
 }
 
 export function runSecurityAudit(): {
   clean: boolean;
   findings: Finding[];
   historyFindings: Finding[];
+  historyError?: string;
   gitignoreValid: boolean;
 } {
   const findings = scanDirectory(process.cwd());
-  const historyFindings = scanGitHistory();
+  const historyResult = scanGitHistory();
 
   const gitignorePath = path.join(process.cwd(), ".gitignore");
   const gitignore = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, "utf-8") : "";
@@ -154,10 +193,14 @@ export function runSecurityAudit(): {
     gitignore.includes(".env") &&
     (gitignore.includes(".env.local") || gitignore.includes(".env*.local"));
 
+  const hasHistoryError = Boolean(historyResult.error);
+  const clean = findings.length === 0 && historyResult.findings.length === 0 && !hasHistoryError;
+
   return {
-    clean: findings.length === 0 && historyFindings.length === 0,
+    clean,
     findings,
-    historyFindings,
+    historyFindings: historyResult.findings,
+    historyError: historyResult.error,
     gitignoreValid,
   };
 }
@@ -498,9 +541,13 @@ if (
   process.argv[1]?.endsWith("security-audit.ts")
 ) {
   console.log("=== Running Secrets & Credentials Scan ===");
-  const { clean, findings, historyFindings, gitignoreValid } = runSecurityAudit();
+  const { clean, findings, historyFindings, historyError, gitignoreValid } = runSecurityAudit();
 
   console.log(`[${gitignoreValid ? "PASS" : "FAIL"}] .gitignore guards .env files.`);
+
+  if (historyError) {
+    console.error(`[FAIL] Git history inspection error: ${historyError}`);
+  }
 
   if (findings.length > 0 || historyFindings.length > 0) {
     if (findings.length > 0) {
@@ -511,23 +558,21 @@ if (
     }
     if (historyFindings.length > 0) {
       console.error(
-        `Found ${historyFindings.length} potential exposed secrets in recent git commit history:`,
+        `Found ${historyFindings.length} potential exposed secrets in full git commit history:`,
       );
       for (const f of historyFindings) {
         console.error(`  - ${f.file} [${f.pattern}]`);
       }
     }
-  } else {
-    console.log(
-      "[PASS] No hardcoded production credentials found in source files or recent git history.",
-    );
+  } else if (!historyError) {
+    console.log("[PASS] No hardcoded production credentials found in source files or git history.");
   }
 
   const { passed: auditPassed, unapprovedCount } = checkDependencyAudit();
 
   if (!clean || !gitignoreValid || !auditPassed) {
     console.error(
-      `\n[FAIL] Security audit failed blocking release criteria. Secrets clean: ${clean}, .gitignore: ${gitignoreValid}, Unapproved vulns: ${unapprovedCount}`,
+      `\n[FAIL] Security audit failed blocking release criteria. Secrets clean: ${clean}, .gitignore: ${gitignoreValid}, Unapproved vulns: ${unapprovedCount}${historyError ? `, History scan error: ${historyError}` : ""}`,
     );
     process.exit(1);
   }
