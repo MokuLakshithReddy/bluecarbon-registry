@@ -4,16 +4,14 @@ import http from "node:http";
 import { ethers } from "ethers";
 import {
   createEvmProvider,
+  toMilliTco2e,
+  fromMilliTco2e,
+  BLUE_CARBON_REGISTRY_ABI,
   type AnchorPayload,
   type BlockchainConfig,
 } from "../../src/lib/blockchain.server.ts";
 
-// Minimal ABI interface for decoding RPC call data
-const TEST_ABI = [
-  "function anchorRecord(bytes32 recordHash, string projectCode, uint256 verifiedTco2e) external returns (bytes32)",
-  "function verifyRecord(bytes32 recordHash) external view returns (bool exists, string projectCode, uint256 verifiedTco2e, uint256 blockNumber, uint256 timestamp, address verifier)",
-];
-const iface = new ethers.Interface(TEST_ABI);
+const iface = new ethers.Interface(BLUE_CARBON_REGISTRY_ABI);
 
 // A private key for testing only
 const TEST_SIGNER_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -22,11 +20,16 @@ const TEST_CONTRACT_ADDRESS = "0x1111111111111111111111111111111111111111";
 interface MockRpcOptions {
   receiptStatus?: "0x1" | "0x0";
   recordExists?: boolean;
+  receiptToAddress?: string;
+  emitExpectedEvent?: boolean;
 }
 
 function startMockRpcServer(opts: MockRpcOptions = {}) {
   const receiptStatus = opts.receiptStatus ?? "0x1";
   const recordExists = opts.recordExists ?? true;
+  const receiptTo = (opts.receiptToAddress ?? TEST_CONTRACT_ADDRESS).toLowerCase();
+  const emitEvent = opts.emitExpectedEvent ?? true;
+
   let receivedRawTx: string | null = null;
   let decodedAnchorArgs: ethers.Result | null = null;
 
@@ -84,9 +87,9 @@ function startMockRpcServer(opts: MockRpcOptions = {}) {
             case "eth_maxPriorityFeePerGas":
               return "0x3b9aca00";
             case "eth_sendRawTransaction": {
-              receivedRawTx = params[0];
-              // Decode the signed raw transaction to verify genuine contract interaction
-              const tx = ethers.Transaction.from(params[0]);
+              const raw = String(params[0] ?? "");
+              receivedRawTx = raw;
+              const tx = ethers.Transaction.from(raw);
               if (tx.data && tx.data.length > 10) {
                 try {
                   decodedAnchorArgs = iface.decodeFunctionData("anchorRecord", tx.data);
@@ -97,26 +100,52 @@ function startMockRpcServer(opts: MockRpcOptions = {}) {
               return tx.hash;
             }
             case "eth_getTransactionReceipt": {
+              const logs: Array<{ address: string; topics: string[]; data: string }> = [];
+              if (emitEvent) {
+                const eventDesc = iface.getEvent("RecordAnchored");
+                if (eventDesc) {
+                  const encodedLog = iface.encodeEventLog(eventDesc, [
+                    "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                    "BC-MNG-0001",
+                    520650n,
+                    1700000000n,
+                    TEST_CONTRACT_ADDRESS,
+                  ]);
+                  logs.push({
+                    address: TEST_CONTRACT_ADDRESS,
+                    topics: [...encodedLog.topics],
+                    data: encodedLog.data,
+                    blockNumber: "0x100",
+                    blockHash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                    transactionHash: String(params[0]),
+                    transactionIndex: "0x0",
+                    logIndex: "0x0",
+                    removed: false,
+                  });
+                }
+              }
+
               return {
                 transactionHash: params[0],
+                to: receiptTo,
                 blockNumber: "0x100",
                 blockHash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
                 status: receiptStatus,
                 transactionIndex: "0x0",
                 gasUsed: "0x5208",
                 cumulativeGasUsed: "0x5208",
-                logs: [],
+                logs,
               };
             }
             case "eth_call": {
-              // Return verifyRecord tuple: (bool exists, string projectCode, uint256 verifiedTco2e, uint256 blockNumber, uint256 timestamp, address verifier)
+              // Return verifyRecord tuple: (bool exists, string projectCode, uint256 verifiedCarbonMilliTco2e, uint256 blockNumber, uint256 timestamp, address verifier)
               const encoded = iface.encodeFunctionResult("verifyRecord", [
                 recordExists,
                 "BC-MNG-0001",
-                1200n,
+                520650n,
                 256n,
                 1700000000n,
-                "0x1111111111111111111111111111111111111111",
+                TEST_CONTRACT_ADDRESS,
               ]);
               return encoded;
             }
@@ -167,7 +196,20 @@ function startMockRpcServer(opts: MockRpcOptions = {}) {
   });
 }
 
-test("EVM Provider: submits genuine signed contract transaction, polls receipt, and confirms on-chain", async () => {
+test("Carbon Precision Scaling: toMilliTco2e and fromMilliTco2e preserve 3 decimal places without truncation", () => {
+  const decimalValue = 520.654;
+  const scaled = toMilliTco2e(decimalValue);
+  assert.strictEqual(scaled, 520654n);
+
+  const descaled = fromMilliTco2e(scaled);
+  assert.strictEqual(descaled, 520.654);
+
+  // Round trip for 0.001 tCO2e (1 kg CO2e)
+  assert.strictEqual(toMilliTco2e(0.001), 1n);
+  assert.strictEqual(fromMilliTco2e(1n), 0.001);
+});
+
+test("EVM Provider: submits genuine signed contract transaction with fixed-point precision, polls receipt, and verifies event", async () => {
   const mockRpc = await startMockRpcServer({ receiptStatus: "0x1", recordExists: true });
 
   try {
@@ -193,7 +235,7 @@ test("EVM Provider: submits genuine signed contract transaction, polls receipt, 
       area_hectares: 25,
       restoration_start: "2024-01-01",
       restoration_end: "2026-01-01",
-      verified_tco2e: 520,
+      verified_tco2e: 520.65, // Decimal precision value!
       methodology: "IPCC-WETLANDS-2013-VM0033-V2.1",
       evidence_count: 5,
       evidence_hashes: ["abc1", "abc2"],
@@ -203,9 +245,6 @@ test("EVM Provider: submits genuine signed contract transaction, polls receipt, 
 
     const recordHash = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
     const result = await provider.anchor(recordHash, testPayload);
-    if (result.status !== "CONFIRMED") {
-      console.log("ANCHOR ERROR LOG:", result.error);
-    }
 
     // 1. Verify that transaction submission succeeded and was NOT simulated
     assert.strictEqual(result.status, "CONFIRMED");
@@ -214,25 +253,93 @@ test("EVM Provider: submits genuine signed contract transaction, polls receipt, 
     assert.strictEqual(result.block_number, 256);
     assert.ok(result.explorer_url?.includes(result.tx_hash));
 
-    // 2. Verify that eth_sendRawTransaction actually occurred with anchorRecord contract calldata
+    // 2. Verify fixed-point scaling in anchorRecord calldata (520.65 -> 520650n milli-tCO2e)
     const decodedArgs = mockRpc.getDecodedArgs();
     assert.ok(decodedArgs != null, "anchorRecord calldata must have been signed and sent");
     assert.strictEqual(decodedArgs[0], recordHash);
     assert.strictEqual(decodedArgs[1], "BC-MNG-0001");
-    assert.strictEqual(decodedArgs[2], 520n);
+    assert.strictEqual(
+      decodedArgs[2],
+      520650n,
+      "Carbon must be scaled by 1,000 without decimal truncation",
+    );
 
-    // 3. Verify on-chain verification report via view method
+    // 3. Verify on-chain verification report parses receipt event and reads contract state
     const verifyReport = await provider.verify(result.tx_hash, recordHash);
     assert.strictEqual(verifyReport.isVerified, true);
     assert.strictEqual(verifyReport.simulated, false);
     assert.strictEqual(verifyReport.receiptStatus, "SUCCESS");
+    assert.strictEqual(verifyReport.eventVerified, true);
+    assert.strictEqual(verifyReport.contractVerified, true);
+    assert.strictEqual(verifyReport.anchoredCarbonTco2e, 520.65);
+    assert.strictEqual(verifyReport.anchoredProjectCode, "BC-MNG-0001");
+  } finally {
+    await mockRpc.close();
+  }
+});
+
+test("EVM Provider: verification fails if transaction called an unexpected contract address", async () => {
+  const WRONG_CONTRACT = "0x9999999999999999999999999999999999999999";
+  const mockRpc = await startMockRpcServer({
+    receiptStatus: "0x1",
+    receiptToAddress: WRONG_CONTRACT,
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    );
+
+    assert.strictEqual(report.isVerified, false);
+    assert.ok(report.error?.includes("expected registry contract"));
+  } finally {
+    await mockRpc.close();
+  }
+});
+
+test("EVM Provider: verification fails if transaction receipt did not emit RecordAnchored event", async () => {
+  const mockRpc = await startMockRpcServer({
+    receiptStatus: "0x1",
+    emitExpectedEvent: false,
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    );
+
+    assert.strictEqual(report.isVerified, false);
+    assert.strictEqual(report.eventVerified, false);
+    assert.ok(report.error?.includes("RecordAnchored event"));
   } finally {
     await mockRpc.close();
   }
 });
 
 test("EVM Provider: returns status FAILED when transaction reverts on-chain (never CONFIRMED)", async () => {
-  const mockRpc = await startMockRpcServer({ receiptStatus: "0x0" }); // Reverted transaction
+  const mockRpc = await startMockRpcServer({ receiptStatus: "0x0" });
 
   try {
     const config: BlockchainConfig = {
@@ -267,7 +374,6 @@ test("EVM Provider: returns status FAILED when transaction reverts on-chain (nev
     const recordHash = "0x9999999999999999999999999999999999999999999999999999999999999999";
     const result = await provider.anchor(recordHash, testPayload);
 
-    // CRITICAL AUDIT CHECK: Reverted transactions MUST return status FAILED, never CONFIRMED
     assert.strictEqual(result.status, "FAILED");
     assert.strictEqual(result.simulated, false);
     assert.ok(result.error?.includes("revert"));

@@ -143,18 +143,23 @@ export function CarbonMethodologyPanel({
             Uncertainty Discount: -{assessment.uncertaintyDiscountTco2e.toLocaleString()} tCO₂e
           </p>
           <p className="font-semibold text-primary pt-1">
-            Net Verified Impact: {assessment.netVerifiedTco2e.toLocaleString()} tCO₂e
+            Net Model Estimate: {assessment.netVerifiedTco2e.toLocaleString()} tCO₂e
           </p>
         </div>
       </div>
 
       <div className="mt-4 flex items-start gap-2 rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
         <BookOpen className="mt-0.5 size-4 shrink-0 text-primary" />
-        <p>
-          <span className="font-semibold text-foreground">Scientific Reference: </span>
-          {assessment.citation}. Calculated over {assessment.durationYears} year(s) with{" "}
-          {assessment.survivalRatePercent}% survival factor.
-        </p>
+        <div className="space-y-1">
+          <p>
+            <span className="font-semibold text-foreground">Scientific Reference: </span>
+            {assessment.citation}. Calculated over {assessment.durationYears} year(s) with{" "}
+            {assessment.survivalRatePercent}% survival factor.
+          </p>
+          <p className="text-[0.7rem] text-amber-600 dark:text-amber-400 font-medium">
+            {assessment.unaccreditedDisclaimer}
+          </p>
+        </div>
       </div>
     </div>
   );

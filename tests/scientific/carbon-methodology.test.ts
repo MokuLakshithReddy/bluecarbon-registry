@@ -16,6 +16,12 @@ test("Carbon Methodology: IPCC coefficients are scientifically defined for all e
   // Methodology standard version check
   assert.strictEqual(METHODOLOGY_SPEC.id, "IPCC-WETLANDS-2013-VM0033-V2.1");
   assert.strictEqual(METHODOLOGY_SPEC.governingYear, 2026);
+  assert.ok(METHODOLOGY_SPEC.disclaimer.includes("Model Estimate Only"));
+
+  // Verify Table citations for IPCC 2013
+  assert.ok(SCIENTIFIC_CARBON_COEFFICIENTS.MANGROVE.tableReference.includes("Table 4.4"));
+  assert.ok(SCIENTIFIC_CARBON_COEFFICIENTS.SEAGRASS.tableReference.includes("Table 4.11"));
+  assert.ok(SCIENTIFIC_CARBON_COEFFICIENTS.SALT_MARSH.tableReference.includes("Table 4.11"));
 });
 
 test("Carbon Methodology: Mangrove calculation applies biomass survival and soil accretion", () => {

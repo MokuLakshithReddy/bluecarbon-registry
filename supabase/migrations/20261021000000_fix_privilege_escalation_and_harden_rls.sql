@@ -56,6 +56,20 @@ CREATE POLICY "admin delete roles" ON public.user_roles
   FOR DELETE TO authenticated
   USING (public.has_role(auth.uid(), 'admin'));
 
+-- 2b. SERVICE ROLE CALLER IDENTIFICATION HELPER
+-- In PostgreSQL SECURITY DEFINER functions, current_user becomes the function owner.
+-- Checking definer role fails to identify service-role callers.
+-- We reliably check session_user, request.jwt.claim.role, and auth.jwt()->>'role'.
+CREATE OR REPLACE FUNCTION public.is_service_role() RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT (
+    session_user = 'service_role' OR
+    coalesce(current_setting('request.jwt.claim.role', true), '') = 'service_role' OR
+    coalesce(auth.jwt()->>'role', '') = 'service_role'
+  );
+$$;
+GRANT EXECUTE ON FUNCTION public.is_service_role() TO authenticated, service_role, anon;
+
 -- 3. SECURE ROLE MANAGEMENT PROCEDURE (ADMIN ONLY)
 CREATE OR REPLACE FUNCTION public.admin_assign_role(
   _target_user_id uuid,
@@ -63,7 +77,7 @@ CREATE OR REPLACE FUNCTION public.admin_assign_role(
 )
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF NOT (public.has_role(auth.uid(), 'admin') OR current_user = 'service_role') THEN
+  IF NOT (public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
     RAISE EXCEPTION 'Unauthorized: only registry administrators can assign roles.';
   END IF;
 
@@ -104,13 +118,13 @@ BEGIN
   IF NOT (
     public.has_role(_verifier_id, 'verifier') OR
     public.has_role(_verifier_id, 'admin') OR
-    current_user = 'service_role'
+    public.is_service_role()
   ) THEN
     RAISE EXCEPTION 'Unauthorized: Caller % is not an authorized verifier.', _verifier_id;
   END IF;
 
   -- Ensure caller matches auth.uid() when not service_role
-  IF current_user != 'service_role' AND auth.uid() IS DISTINCT FROM _verifier_id THEN
+  IF NOT public.is_service_role() AND auth.uid() IS DISTINCT FROM _verifier_id THEN
     RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
   END IF;
 

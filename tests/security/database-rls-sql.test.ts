@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const MIGRATION_PATH = path.resolve(
   __dirname,
@@ -112,5 +116,35 @@ test("Database Boundary: verification and carbon impact records are strictly imm
       'CREATE POLICY "carbon impact no delete" ON public.carbon_impact_records FOR DELETE TO authenticated USING (false)',
     ),
     "carbon_impact_records deletes must be disallowed",
+  );
+});
+
+test("Database Boundary: SECURITY DEFINER functions use robust is_service_role() instead of current_user = 'service_role'", () => {
+  const sql = fs.readFileSync(MIGRATION_PATH, "utf-8");
+
+  // Must declare is_service_role helper
+  assert.ok(
+    sql.includes("CREATE OR REPLACE FUNCTION public.is_service_role()"),
+    "Must define is_service_role() helper function",
+  );
+  assert.ok(
+    sql.includes("session_user = 'service_role'"),
+    "is_service_role must inspect session_user",
+  );
+  assert.ok(
+    sql.includes("request.jwt.claim.role"),
+    "is_service_role must inspect request.jwt.claim.role",
+  );
+
+  // Must NOT use buggy current_user = 'service_role' inside SECURITY DEFINER functions
+  assert.strictEqual(
+    sql.includes("current_user = 'service_role'"),
+    false,
+    "Must not check current_user = 'service_role' inside SECURITY DEFINER functions",
+  );
+  assert.strictEqual(
+    sql.includes("current_user != 'service_role'"),
+    false,
+    "Must not check current_user != 'service_role' inside SECURITY DEFINER functions",
   );
 });

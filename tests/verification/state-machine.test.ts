@@ -145,3 +145,124 @@ test("State Machine: Optimistic locking protects against concurrent verification
   // Verifier 2 tries to reject simultaneously expecting UNDER_REVIEW -> conflict thrown!
   assert.throws(() => applyVerification("UNDER_REVIEW", "REJECTED"), /Concurrency conflict/);
 });
+
+test("State Machine: approveProject fails closed and refuses non-atomic fallback on database error", async () => {
+  const { approveProject, requestCorrection, rejectProject } =
+    await import("../../src/lib/registry.server.ts");
+
+  let fallbackUpdateExecuted = false;
+  let fallbackReviewInserted = false;
+
+  // Mock Supabase client where RPC fails
+  const mockSupabase = {
+    auth: {
+      getUser: async () => ({
+        data: { user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" } },
+        error: null,
+      }),
+    },
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => {
+          const projectData = {
+            id: "00000000-0000-0000-0000-000000000002",
+            project_code: "BC-MNG-TEST",
+            name: "Test Mangrove",
+            status: "UNDER_REVIEW",
+            ecosystem: "MANGROVE",
+            estimated_carbon: 500,
+            owner_email: "owner@test.org",
+          };
+          const rolesData = [{ role: "verifier" }];
+
+          return {
+            then: (resolve: (val: unknown) => void) => {
+              if (table === "user_roles") {
+                return Promise.resolve({ data: rolesData, error: null }).then(resolve);
+              }
+              return Promise.resolve({ data: [projectData], error: null }).then(resolve);
+            },
+            single: async () => ({
+              data: projectData,
+              error: null,
+            }),
+            maybeSingle: async () => ({
+              data: table === "user_roles" ? rolesData[0] : projectData,
+              error: null,
+            }),
+          };
+        },
+      }),
+      update: () => {
+        fallbackUpdateExecuted = true;
+        return {
+          eq: () => ({
+            eq: () => ({
+              select: async () => [{ id: "00000000-0000-0000-0000-000000000002" }],
+            }),
+          }),
+        };
+      },
+      insert: () => {
+        fallbackReviewInserted = true;
+        return Promise.resolve({ error: null });
+      },
+    }),
+    rpc: async (_fn: string, _args: Record<string, unknown>) => {
+      // Deliberately simulate database failure or missing procedure
+      return {
+        data: null,
+        error: { message: "Simulated foreign key failure in atomic procedure." },
+      };
+    },
+  };
+
+  type RegistryClient = Parameters<typeof approveProject>[0]["supabase"];
+  const client = mockSupabase as unknown as RegistryClient;
+
+  // 1. approveProject MUST reject and throw
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: client,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 520,
+        comments: "Approved",
+      });
+    },
+    /atomic database transaction error: Simulated foreign key failure/,
+    "Must throw and reject verification when atomic transaction fails",
+  );
+
+  // CRITICAL AUDIT CHECK: Non-atomic fallback must NEVER have executed!
+  assert.strictEqual(
+    fallbackUpdateExecuted,
+    false,
+    "No partial fallback project update must occur",
+  );
+  assert.strictEqual(fallbackReviewInserted, false, "No partial fallback review insert must occur");
+
+  // 2. requestCorrection MUST reject and throw
+  await assert.rejects(async () => {
+    await requestCorrection({
+      supabase: client,
+      userId: "00000000-0000-0000-0000-000000000001",
+      verifierEmail: "verifier@test.org",
+      projectId: "00000000-0000-0000-0000-000000000002",
+      comments: "Missing high resolution drone imagery",
+    });
+  }, /Correction request failed: atomic database transaction error/);
+
+  // 3. rejectProject MUST reject and throw
+  await assert.rejects(async () => {
+    await rejectProject({
+      supabase: client,
+      userId: "00000000-0000-0000-0000-000000000001",
+      verifierEmail: "verifier@test.org",
+      projectId: "00000000-0000-0000-0000-000000000002",
+      comments: "Project area does not meet additionality standards",
+    });
+  }, /Project rejection failed: atomic database transaction error/);
+});

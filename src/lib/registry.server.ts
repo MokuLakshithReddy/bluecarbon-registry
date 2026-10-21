@@ -298,16 +298,16 @@ export async function approveProject(input: DecisionInput) {
 
   const verifiedAt = new Date().toISOString();
 
-  // 1. Try atomic database procedure if available
+  // 1. Execute atomic database transaction
   const supabaseWithRpc = input.supabase as unknown as {
     rpc: (
       fn: string,
       args: Record<string, unknown>,
     ) => Promise<{ data: unknown; error: { message: string } | null }>;
   };
+
   const { data: _atomicResult, error: rpcError } = await supabaseWithRpc.rpc(
     "perform_verification_decision",
-
     {
       _project_id: project.id,
       _decision: "APPROVE",
@@ -320,64 +320,10 @@ export async function approveProject(input: DecisionInput) {
   );
 
   if (rpcError) {
-    // If stored procedure is not yet applied, fallback to coordinated safe updates with error checks
-    console.warn("Atomic RPC not available, executing coordinated update:", rpcError.message);
-
-    const { data: updated, error: updateError } = await input.supabase
-      .from("projects")
-      .update({
-        status: "VERIFIED",
-        verified_carbon: verifiedCarbon,
-        verified_at: verifiedAt,
-        verifier_id: input.userId,
-        verifier_name: input.verifierEmail,
-        updated_at: verifiedAt,
-      })
-      .eq("id", project.id)
-      .eq("status", "UNDER_REVIEW")
-      .select();
-
-    if (updateError) throw new Error(`Verification update failed: ${updateError.message}`);
-    if (!updated || updated.length === 0) {
-      throw new Error(
-        "Concurrency conflict: Project status was modified concurrently. Please refresh.",
-      );
-    }
-
-    const { error: revError } = await input.supabase.from("verification_reviews").insert({
-      project_id: project.id,
-      verifier_id: input.userId,
-      verifier_email: input.verifierEmail,
-      decision: "APPROVED",
-      comments: input.comments ?? null,
-      confirmed_carbon: verifiedCarbon,
-      created_at: verifiedAt,
-    });
-    if (revError) throw new Error(`Failed to record verification review: ${revError.message}`);
-
-    const { error: impactError } = await input.supabase.from("carbon_impact_records").insert({
-      project_id: project.id,
-      estimated_tco2e: project.estimated_carbon,
-      verified_tco2e: verifiedCarbon,
-      verified_by: input.userId,
-      verified_at: verifiedAt,
-    });
-    if (impactError) throw new Error(`Failed to record carbon impact: ${impactError.message}`);
-
-    await logEvent(input.supabase, {
-      projectId: project.id,
-      projectCode: project.project_code,
-      actorEmail: input.verifierEmail,
-      action: "Project verified",
-      previous: "UNDER_REVIEW",
-      next: "VERIFIED",
-      comments: input.comments ?? null,
-      timelineLabel: "Project Verified",
-      timelineDetail: `Verified carbon impact confirmed: ${verifiedCarbon.toLocaleString("en-IN")} tCO₂e`,
-      notifyEmail: project.owner_email,
-      notifyTitle: `Project ${project.project_code} has been verified`,
-      notifyBody: `Verified carbon impact: ${verifiedCarbon.toLocaleString("en-IN")} tCO₂e.`,
-    });
+    // Fail closed: Never fall back to partial, non-atomic database writes
+    throw new Error(
+      `Verification approval failed: atomic database transaction error: ${rpcError.message}`,
+    );
   }
 
   // 2. Fetch evidence hashes for blockchain anchor
@@ -433,7 +379,7 @@ export async function approveProject(input: DecisionInput) {
   return { status: "VERIFIED" as const, verifiedCarbon, anchor };
 }
 
-/** Requests correction. Enforces UNDER_REVIEW -> CORRECTION_REQUIRED transition with mandatory comments. */
+/** Requests correction. Enforces UNDER_REVIEW -> CORRECTION_REQUIRED transition atomically with mandatory comments. */
 export async function requestCorrection(input: DecisionInput) {
   await assertVerifier(input.supabase, input.userId);
   if (!input.comments?.trim() || input.comments.trim().length < 5) {
@@ -449,51 +395,33 @@ export async function requestCorrection(input: DecisionInput) {
     );
   }
 
-  const { data: updated, error: updateError } = await input.supabase
-    .from("projects")
-    .update({
-      status: "CORRECTION_REQUIRED",
-      verifier_id: input.userId,
-      verifier_name: input.verifierEmail,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", project.id)
-    .eq("status", "UNDER_REVIEW")
-    .select();
+  const supabaseWithRpc = input.supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
 
-  if (updateError) throw new Error(`Correction update failed: ${updateError.message}`);
-  if (!updated || updated.length === 0) {
-    throw new Error("Concurrency conflict: Project was modified concurrently.");
+  const { error: rpcError } = await supabaseWithRpc.rpc("perform_verification_decision", {
+    _project_id: project.id,
+    _decision: "REQUEST_CORRECTION",
+    _comments: input.comments.trim(),
+    _confirmed_carbon: null,
+    _verifier_id: input.userId,
+    _verifier_email: input.verifierEmail,
+    _expected_status: "UNDER_REVIEW",
+  });
+
+  if (rpcError) {
+    throw new Error(
+      `Correction request failed: atomic database transaction error: ${rpcError.message}`,
+    );
   }
-
-  const { error: revError } = await input.supabase.from("verification_reviews").insert({
-    project_id: project.id,
-    verifier_id: input.userId,
-    verifier_email: input.verifierEmail,
-    decision: "CORRECTION_REQUESTED",
-    comments: input.comments.trim(),
-  });
-  if (revError) throw new Error(`Review logging failed: ${revError.message}`);
-
-  await logEvent(input.supabase, {
-    projectId: project.id,
-    projectCode: project.project_code,
-    actorEmail: input.verifierEmail,
-    action: "Correction requested",
-    previous: "UNDER_REVIEW",
-    next: "CORRECTION_REQUIRED",
-    comments: input.comments.trim(),
-    timelineLabel: "Correction Requested",
-    timelineDetail: input.comments.trim(),
-    notifyEmail: project.owner_email,
-    notifyTitle: `Correction required for ${project.project_code}`,
-    notifyBody: input.comments.trim(),
-  });
 
   return { status: "CORRECTION_REQUIRED" as const };
 }
 
-/** Rejects project. Enforces UNDER_REVIEW or SUBMITTED -> REJECTED transition with mandatory comments. */
+/** Rejects project. Enforces UNDER_REVIEW or SUBMITTED -> REJECTED transition atomically with mandatory comments. */
 export async function rejectProject(input: DecisionInput) {
   await assertVerifier(input.supabase, input.userId);
   if (!input.comments?.trim() || input.comments.trim().length < 5) {
@@ -505,46 +433,28 @@ export async function rejectProject(input: DecisionInput) {
     throw new Error(`Cannot reject project in '${project.status}' state.`);
   }
 
-  const { data: updated, error: updateError } = await input.supabase
-    .from("projects")
-    .update({
-      status: "REJECTED",
-      verifier_id: input.userId,
-      verifier_name: input.verifierEmail,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", project.id)
-    .in("status", ["UNDER_REVIEW", "SUBMITTED"])
-    .select();
+  const supabaseWithRpc = input.supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
 
-  if (updateError) throw new Error(`Reject update failed: ${updateError.message}`);
-  if (!updated || updated.length === 0) {
-    throw new Error("Concurrency conflict: Project was modified concurrently.");
+  const { error: rpcError } = await supabaseWithRpc.rpc("perform_verification_decision", {
+    _project_id: project.id,
+    _decision: "REJECT",
+    _comments: input.comments.trim(),
+    _confirmed_carbon: null,
+    _verifier_id: input.userId,
+    _verifier_email: input.verifierEmail,
+    _expected_status: project.status,
+  });
+
+  if (rpcError) {
+    throw new Error(
+      `Project rejection failed: atomic database transaction error: ${rpcError.message}`,
+    );
   }
-
-  const { error: revError } = await input.supabase.from("verification_reviews").insert({
-    project_id: project.id,
-    verifier_id: input.userId,
-    verifier_email: input.verifierEmail,
-    decision: "REJECTED",
-    comments: input.comments.trim(),
-  });
-  if (revError) throw new Error(`Review logging failed: ${revError.message}`);
-
-  await logEvent(input.supabase, {
-    projectId: project.id,
-    projectCode: project.project_code,
-    actorEmail: input.verifierEmail,
-    action: "Project rejected",
-    previous: project.status,
-    next: "REJECTED",
-    comments: input.comments.trim(),
-    timelineLabel: "Project Rejected",
-    timelineDetail: input.comments.trim(),
-    notifyEmail: project.owner_email,
-    notifyTitle: `Project ${project.project_code} was rejected`,
-    notifyBody: input.comments.trim(),
-  });
 
   return { status: "REJECTED" as const };
 }
