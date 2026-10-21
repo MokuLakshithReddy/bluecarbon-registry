@@ -93,6 +93,7 @@ GRANT EXECUTE ON FUNCTION public.admin_assign_role(uuid, public.app_role) TO aut
 DO $$
 BEGIN
   ALTER TYPE public.project_status ADD VALUE IF NOT EXISTS 'VERIFIED_PENDING_ANCHOR' BEFORE 'VERIFIED';
+  ALTER TYPE public.project_status ADD VALUE IF NOT EXISTS 'DEMO_SIMULATED';
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
@@ -106,6 +107,10 @@ CREATE TABLE IF NOT EXISTS public.blockchain_outbox (
   tx_hash text,
   attempts int NOT NULL DEFAULT 0,
   last_error text,
+  locked_until timestamptz,
+  locked_by text,
+  next_retry_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -128,7 +133,8 @@ CREATE OR REPLACE FUNCTION public.perform_verification_decision(
   _confirmed_carbon numeric,
   _verifier_id uuid,
   _verifier_email text,
-  _expected_status public.project_status
+  _expected_status public.project_status,
+  _anchor_payload jsonb DEFAULT NULL
 )
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -190,16 +196,19 @@ BEGIN
     v_notify_title := format('Project %s verification approved', v_project.project_code);
     v_notify_body := format('Verified carbon impact: %s tCO2e. Queued for blockchain anchoring.', round(v_verified_carbon, 2));
 
-    -- Enqueue durable blockchain anchoring outbox record
+    -- Enqueue durable blockchain anchoring outbox record (storing canonical payload as source of truth)
     INSERT INTO public.blockchain_outbox (project_id, payload, status)
     VALUES (
       v_project.id,
-      jsonb_build_object(
-        'project_code', v_project.project_code,
-        'verified_carbon', v_verified_carbon,
-        'verifier_id', _verifier_id,
-        'verifier_email', _verifier_email,
-        'comments', _comments
+      COALESCE(
+        _anchor_payload,
+        jsonb_build_object(
+          'project_code', v_project.project_code,
+          'verified_carbon', v_verified_carbon,
+          'verifier_id', _verifier_id,
+          'verifier_email', _verifier_email,
+          'comments', _comments
+        )
       ),
       'PENDING'
     );
@@ -363,6 +372,7 @@ GRANT EXECUTE ON FUNCTION public.perform_verification_decision TO authenticated,
 
 -- 4b. CONFIRM ON-CHAIN ANCHOR PROCEDURE
 -- Promotes project from VERIFIED_PENDING_ANCHOR to VERIFIED upon genuine blockchain confirmation.
+-- Strictly requires genuine CONFIRMED status from real EVM provider.
 CREATE OR REPLACE FUNCTION public.confirm_blockchain_anchor(
   _project_id uuid,
   _record_hash text,
@@ -379,7 +389,7 @@ DECLARE
   v_project public.projects%ROWTYPE;
   v_now timestamptz := now();
 BEGIN
-  -- Verify caller authorization
+  -- 1. STRICT AUTHORIZATION & IDENTITY BINDING
   IF NOT (
     public.has_role(_verifier_id, 'verifier') OR
     public.has_role(_verifier_id, 'admin') OR
@@ -388,7 +398,18 @@ BEGIN
     RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
   END IF;
 
-  -- Lock project row
+  -- Ensure authenticated caller matches _verifier_id (prevents supplying another verifier's UUID)
+  IF NOT public.is_service_role() AND auth.uid() IS DISTINCT FROM _verifier_id THEN
+    RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
+  END IF;
+
+  -- 2. REJECT SIMULATED OR NON-CONFIRMED ANCHORS
+  -- Only genuine CONFIRMED on-chain transactions qualify for VERIFIED state
+  IF _status != 'CONFIRMED' THEN
+    RAISE EXCEPTION 'Rejected: Only genuine CONFIRMED blockchain records can promote project to VERIFIED. Status "%" cannot be confirmed as on-chain finality.', _status;
+  END IF;
+
+  -- 3. Lock project row
   SELECT * INTO v_project
   FROM public.projects
   WHERE id = _project_id
@@ -402,7 +423,7 @@ BEGIN
     RAISE EXCEPTION 'Invalid transition: Project % is in state %, expected VERIFIED_PENDING_ANCHOR.', v_project.project_code, v_project.status;
   END IF;
 
-  -- Insert into blockchain_records
+  -- 4. Insert into blockchain_records
   INSERT INTO public.blockchain_records (
     project_id,
     record_hash,
@@ -420,14 +441,14 @@ BEGIN
     _tx_hash,
     _block_number,
     _network,
-    _status,
+    'CONFIRMED',
     _verifier_id,
     _verified_tco2e,
     _anchored_payload,
     v_now
   );
 
-  -- Update project status to VERIFIED
+  -- 5. Update project status to VERIFIED
   UPDATE public.projects
   SET
     status = 'VERIFIED',
@@ -435,16 +456,19 @@ BEGIN
     updated_at = v_now
   WHERE id = _project_id;
 
-  -- Update outbox record to CONFIRMED
+  -- 6. Update outbox record to CONFIRMED
   UPDATE public.blockchain_outbox
   SET
-    status = _status,
+    status = 'CONFIRMED',
     record_hash = _record_hash,
     tx_hash = _tx_hash,
+    locked_until = NULL,
+    locked_by = NULL,
+    completed_at = v_now,
     updated_at = v_now
   WHERE project_id = _project_id AND status = 'PENDING';
 
-  -- Add timeline entry
+  -- 7. Add timeline entry
   INSERT INTO public.project_timeline (
     project_id,
     action,
@@ -472,7 +496,7 @@ END; $$;
 REVOKE EXECUTE ON FUNCTION public.confirm_blockchain_anchor FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.confirm_blockchain_anchor TO authenticated, service_role;
 
--- 4c. RECORD BLOCKCHAIN FAILURE PROCEDURE
+-- 4c. RECORD BLOCKCHAIN FAILURE PROCEDURE (PRESERVES RETRY STATE & BINDS CALLER IDENTITY)
 CREATE OR REPLACE FUNCTION public.record_blockchain_failure(
   _project_id uuid,
   _error_message text,
@@ -482,6 +506,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_now timestamptz := now();
 BEGIN
+  -- Strict caller authorization
   IF NOT (
     public.has_role(_verifier_id, 'verifier') OR
     public.has_role(_verifier_id, 'admin') OR
@@ -490,10 +515,19 @@ BEGIN
     RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
   END IF;
 
+  -- Strict identity binding
+  IF NOT public.is_service_role() AND auth.uid() IS DISTINCT FROM _verifier_id THEN
+    RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
+  END IF;
+
+  -- Update outbox retry state with backoff
   UPDATE public.blockchain_outbox
   SET
     attempts = attempts + 1,
     last_error = _error_message,
+    locked_until = NULL,
+    locked_by = NULL,
+    next_retry_at = v_now + interval '30 seconds',
     updated_at = v_now
   WHERE project_id = _project_id AND status = 'PENDING';
 
@@ -516,6 +550,254 @@ END; $$;
 
 REVOKE EXECUTE ON FUNCTION public.record_blockchain_failure FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_blockchain_failure TO authenticated, service_role;
+
+-- 4d. RECORD SIMULATED DEMO ANCHOR (DEMO MODE ONLY)
+-- Explicitly transitions project to distinct DEMO_SIMULATED status (never production VERIFIED).
+CREATE OR REPLACE FUNCTION public.record_simulated_demo_anchor(
+  _project_id uuid,
+  _record_hash text,
+  _tx_hash text,
+  _verifier_id uuid,
+  _verified_tco2e numeric,
+  _anchored_payload jsonb
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_project public.projects%ROWTYPE;
+  v_now timestamptz := now();
+BEGIN
+  IF NOT (
+    public.has_role(_verifier_id, 'verifier') OR
+    public.has_role(_verifier_id, 'admin') OR
+    public.is_service_role()
+  ) THEN
+    RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
+  END IF;
+
+  IF NOT public.is_service_role() AND auth.uid() IS DISTINCT FROM _verifier_id THEN
+    RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
+  END IF;
+
+  SELECT * INTO v_project FROM public.projects WHERE id = _project_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Project not found: %', _project_id;
+  END IF;
+
+  INSERT INTO public.blockchain_records (
+    project_id,
+    record_hash,
+    tx_hash,
+    block_number,
+    network,
+    status,
+    verifier_id,
+    verified_tco2e,
+    anchored_payload,
+    created_at
+  ) VALUES (
+    _project_id,
+    _record_hash,
+    _tx_hash,
+    0,
+    'Simulated Testnet Demo',
+    'SIMULATED',
+    _verifier_id,
+    _verified_tco2e,
+    _anchored_payload,
+    v_now
+  );
+
+  -- Transition project to distinct DEMO_SIMULATED status (strictly distinct from VERIFIED)
+  UPDATE public.projects
+  SET
+    status = 'DEMO_SIMULATED',
+    verified_carbon = _verified_tco2e,
+    updated_at = v_now
+  WHERE id = _project_id;
+
+  UPDATE public.blockchain_outbox
+  SET
+    status = 'SIMULATED',
+    record_hash = _record_hash,
+    tx_hash = _tx_hash,
+    locked_until = NULL,
+    locked_by = NULL,
+    completed_at = v_now,
+    updated_at = v_now
+  WHERE project_id = _project_id AND status = 'PENDING';
+
+  INSERT INTO public.project_timeline (
+    project_id,
+    action,
+    actor_email,
+    label,
+    detail,
+    created_at
+  ) VALUES (
+    _project_id,
+    'Demo simulation anchored',
+    'system',
+    'Simulated Demo Record (Unverified On-Chain)',
+    'Project evaluated in simulated demo mode. No genuine on-chain transaction was submitted.',
+    v_now
+  );
+
+  RETURN jsonb_build_object(
+    'project_id', _project_id,
+    'status', 'DEMO_SIMULATED',
+    'simulated', true
+  );
+END; $$;
+
+REVOKE EXECUTE ON FUNCTION public.record_simulated_demo_anchor FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_simulated_demo_anchor TO authenticated, service_role;
+
+-- 4e. OUTBOX WORKER LEASING & JOB MANAGEMENT
+CREATE OR REPLACE FUNCTION public.claim_next_outbox_job(
+  _worker_id text,
+  _lease_seconds int DEFAULT 60
+)
+RETURNS TABLE (
+  id uuid,
+  project_id uuid,
+  payload jsonb,
+  status text,
+  attempts int
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public AS $$
+DECLARE
+  v_job public.blockchain_outbox%ROWTYPE;
+  v_lease_interval interval := (_lease_seconds || ' seconds')::interval;
+BEGIN
+  IF NOT (public.is_verifier() OR public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
+    RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can claim outbox jobs.';
+  END IF;
+
+  SELECT * INTO v_job
+  FROM public.blockchain_outbox
+  WHERE public.blockchain_outbox.status = 'PENDING'
+    AND (public.blockchain_outbox.locked_until IS NULL OR public.blockchain_outbox.locked_until < now())
+    AND public.blockchain_outbox.next_retry_at <= now()
+  ORDER BY public.blockchain_outbox.created_at ASC
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1;
+
+  IF FOUND THEN
+    UPDATE public.blockchain_outbox
+    SET
+      locked_until = now() + v_lease_interval,
+      locked_by = _worker_id,
+      attempts = public.blockchain_outbox.attempts + 1,
+      updated_at = now()
+    WHERE public.blockchain_outbox.id = v_job.id;
+
+    RETURN QUERY
+    SELECT v_job.id, v_job.project_id, v_job.payload, v_job.status, v_job.attempts + 1;
+  END IF;
+
+  RETURN;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION public.claim_next_outbox_job TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.claim_project_outbox_job(
+  _project_id uuid,
+  _worker_id text,
+  _lease_seconds int DEFAULT 60
+)
+RETURNS TABLE (
+  id uuid,
+  project_id uuid,
+  payload jsonb,
+  status text,
+  attempts int
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public AS $$
+DECLARE
+  v_job public.blockchain_outbox%ROWTYPE;
+  v_lease_interval interval := (_lease_seconds || ' seconds')::interval;
+BEGIN
+  IF NOT (public.is_verifier() OR public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
+    RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can claim outbox jobs.';
+  END IF;
+
+  SELECT * INTO v_job
+  FROM public.blockchain_outbox
+  WHERE public.blockchain_outbox.project_id = _project_id
+    AND public.blockchain_outbox.status IN ('PENDING', 'FAILED')
+    AND (public.blockchain_outbox.locked_until IS NULL OR public.blockchain_outbox.locked_until < now())
+  ORDER BY public.blockchain_outbox.created_at DESC
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1;
+
+  IF FOUND THEN
+    UPDATE public.blockchain_outbox
+    SET
+      status = 'PENDING',
+      locked_until = now() + v_lease_interval,
+      locked_by = _worker_id,
+      attempts = public.blockchain_outbox.attempts + 1,
+      updated_at = now()
+    WHERE public.blockchain_outbox.id = v_job.id;
+
+    RETURN QUERY
+    SELECT v_job.id, v_job.project_id, v_job.payload, 'PENDING'::text, v_job.attempts + 1;
+  END IF;
+
+  RETURN;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION public.claim_project_outbox_job TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.fail_outbox_job(
+  _job_id uuid,
+  _error_message text,
+  _retry_delay_seconds int DEFAULT 30,
+  _max_attempts int DEFAULT 5
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public AS $$
+DECLARE
+  v_job public.blockchain_outbox%ROWTYPE;
+BEGIN
+  IF NOT (public.is_verifier() OR public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
+    RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can update outbox jobs.';
+  END IF;
+
+  SELECT * INTO v_job FROM public.blockchain_outbox WHERE id = _job_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Outbox job not found: %', _job_id;
+  END IF;
+
+  IF v_job.attempts >= _max_attempts THEN
+    UPDATE public.blockchain_outbox
+    SET
+      status = 'FAILED',
+      locked_until = NULL,
+      locked_by = NULL,
+      last_error = _error_message,
+      updated_at = now()
+    WHERE id = _job_id;
+  ELSE
+    UPDATE public.blockchain_outbox
+    SET
+      status = 'PENDING',
+      locked_until = NULL,
+      locked_by = NULL,
+      next_retry_at = now() + (_retry_delay_seconds || ' seconds')::interval,
+      last_error = _error_message,
+      updated_at = now()
+    WHERE id = _job_id;
+  END IF;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION public.fail_outbox_job TO authenticated, service_role;
 
 -- 5. HARDEN PROJECTS RLS: PREVENT MODIFICATION OF VERIFIED PROJECTS BY OWNERS
 -- Project owners may only update their projects while in 'DRAFT' or 'CORRECTION_REQUIRED' status.

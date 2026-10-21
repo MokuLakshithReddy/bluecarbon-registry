@@ -718,6 +718,7 @@ export type Database = {
         | "CORRECTION_REQUIRED"
         | "VERIFIED_PENDING_ANCHOR"
         | "VERIFIED"
+        | "DEMO_SIMULATED"
         | "REJECTED";
     };
     CompositeTypes: {
@@ -851,6 +852,7 @@ export const Constants = {
         "CORRECTION_REQUIRED",
         "VERIFIED_PENDING_ANCHOR",
         "VERIFIED",
+        "DEMO_SIMULATED",
         "REJECTED",
       ],
     },

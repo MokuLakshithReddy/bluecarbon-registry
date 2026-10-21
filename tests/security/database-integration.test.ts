@@ -5,14 +5,11 @@ import { PGlite } from "@electric-sql/pglite";
 /**
  * Database Authorization & RLS Integration Tests
  *
- * Audit Reference: Finding P1 (Database authorization still needs real integration testing)
- * Validates permissions, RLS policies, role checks, and record immutability against
- * an actual PostgreSQL database execution engine (PGlite WASM) across:
- * - Anonymous execution context
- * - Authenticated Project Owner context
- * - Authenticated Verifier context
- * - Authenticated Admin context
- * - Service Role context
+ * Audit Reference:
+ * - P0 Authorization: Binds verifier identity to auth.uid() in confirm_blockchain_anchor and record_blockchain_failure.
+ * - P0 Verification integrity: Rejects simulated anchors in confirm_blockchain_anchor, keeping DEMO_SIMULATED distinct.
+ * - P1 Outbox recovery: Safe job claiming, lease locking, retries, and backoff.
+ * - P1 Database RLS & immutability verification.
  */
 
 async function initTestDatabase() {
@@ -29,7 +26,7 @@ async function initTestDatabase() {
   await db.exec(`
     CREATE TYPE public.app_role AS ENUM ('admin', 'verifier', 'project_owner');
     CREATE TYPE public.project_status AS ENUM (
-      'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'VERIFIED_PENDING_ANCHOR', 'VERIFIED', 'CORRECTION_REQUIRED', 'REJECTED'
+      'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'VERIFIED_PENDING_ANCHOR', 'VERIFIED', 'DEMO_SIMULATED', 'CORRECTION_REQUIRED', 'REJECTED'
     );
     CREATE TYPE public.review_decision AS ENUM ('APPROVED', 'CORRECTION_REQUESTED', 'REJECTED');
   `);
@@ -81,6 +78,7 @@ async function initTestDatabase() {
       name text NOT NULL,
       status public.project_status NOT NULL DEFAULT 'DRAFT',
       estimated_carbon numeric NOT NULL DEFAULT 0,
+      verified_carbon numeric,
       created_at timestamptz DEFAULT now(),
       updated_at timestamptz DEFAULT now()
     );
@@ -104,6 +102,20 @@ async function initTestDatabase() {
       created_at timestamptz DEFAULT now()
     );
 
+    CREATE TABLE public.blockchain_records (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id uuid NOT NULL REFERENCES public.projects(id),
+      record_hash text NOT NULL,
+      tx_hash text,
+      block_number bigint,
+      network text,
+      status text NOT NULL,
+      verifier_id uuid NOT NULL,
+      verified_tco2e numeric NOT NULL,
+      anchored_payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+
     CREATE TABLE public.blockchain_outbox (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -113,8 +125,12 @@ async function initTestDatabase() {
       tx_hash text,
       attempts int NOT NULL DEFAULT 0,
       last_error text,
-      created_at timestamptz DEFAULT now(),
-      updated_at timestamptz DEFAULT now()
+      locked_until timestamptz,
+      locked_by text,
+      next_retry_at timestamptz NOT NULL DEFAULT now(),
+      completed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
     );
   `);
 
@@ -164,7 +180,8 @@ async function initTestDatabase() {
       _confirmed_carbon numeric,
       _verifier_id uuid,
       _verifier_email text,
-      _expected_status public.project_status
+      _expected_status public.project_status,
+      _anchor_payload jsonb DEFAULT NULL
     )
     RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
     DECLARE
@@ -172,7 +189,7 @@ async function initTestDatabase() {
       v_new_status public.project_status;
       v_review_decision public.review_decision;
     BEGIN
-      -- A. Verify caller authorization
+      -- A. Verify caller authorization & bind identity
       IF NOT (
         public.has_role(_verifier_id, 'verifier') OR
         public.has_role(_verifier_id, 'admin') OR
@@ -211,14 +228,17 @@ async function initTestDatabase() {
         v_new_status := 'VERIFIED_PENDING_ANCHOR';
         v_review_decision := 'APPROVED';
 
-        -- Outbox entry
+        -- Enqueue outbox with stored canonical payload
         INSERT INTO public.blockchain_outbox (project_id, payload, status)
         VALUES (
           v_project.id,
-          jsonb_build_object(
-            'project_code', v_project.project_code,
-            'verified_carbon', _confirmed_carbon,
-            'verifier_id', _verifier_id
+          COALESCE(
+            _anchor_payload,
+            jsonb_build_object(
+              'project_code', v_project.project_code,
+              'verified_carbon', _confirmed_carbon,
+              'verifier_id', _verifier_id
+            )
           ),
           'PENDING'
         );
@@ -226,20 +246,194 @@ async function initTestDatabase() {
         RAISE EXCEPTION 'Unknown decision: %', _decision;
       END IF;
 
-      -- Update project
       UPDATE public.projects
       SET status = v_new_status, updated_at = now()
       WHERE id = v_project.id;
 
-      -- Review record
       INSERT INTO public.verification_reviews (project_id, verifier_id, verifier_email, decision, comments)
       VALUES (v_project.id, _verifier_id, _verifier_email, v_review_decision, _comments);
 
-      -- Carbon impact record
       INSERT INTO public.carbon_impact_records (project_id, verified_tco2e, verified_by, methodology)
       VALUES (v_project.id, _confirmed_carbon, _verifier_id, 'IPCC-2019-WETLANDS-MNG');
 
       RETURN jsonb_build_object('status', v_new_status, 'verified_carbon', _confirmed_carbon);
+    END; $$;
+
+    -- CONFIRM BLOCKCHAIN ANCHOR (Strict identity binding & strictly rejects non-CONFIRMED)
+    CREATE OR REPLACE FUNCTION public.confirm_blockchain_anchor(
+      _project_id uuid,
+      _record_hash text,
+      _tx_hash text,
+      _block_number bigint,
+      _network text,
+      _status text,
+      _verifier_id uuid,
+      _verified_tco2e numeric,
+      _anchored_payload jsonb
+    )
+    RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+    DECLARE
+      v_project public.projects%ROWTYPE;
+    BEGIN
+      IF NOT (
+        public.has_role(_verifier_id, 'verifier') OR
+        public.has_role(_verifier_id, 'admin') OR
+        public.is_service_role()
+      ) THEN
+        RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
+      END IF;
+
+      -- Strict identity binding
+      IF NOT public.is_service_role() AND auth.uid() IS DISTINCT FROM _verifier_id THEN
+        RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
+      END IF;
+
+      -- Reject simulated or non-final statuses
+      IF _status != 'CONFIRMED' THEN
+        RAISE EXCEPTION 'Rejected: Only genuine CONFIRMED blockchain records can promote project to VERIFIED. Status "%" cannot be confirmed.', _status;
+      END IF;
+
+      SELECT * INTO v_project FROM public.projects WHERE id = _project_id FOR UPDATE;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Project not found: %', _project_id;
+      END IF;
+
+      INSERT INTO public.blockchain_records (
+        project_id, record_hash, tx_hash, block_number, network, status, verifier_id, verified_tco2e, anchored_payload
+      ) VALUES (
+        _project_id, _record_hash, _tx_hash, _block_number, _network, 'CONFIRMED', _verifier_id, _verified_tco2e, _anchored_payload
+      );
+
+      UPDATE public.projects
+      SET status = 'VERIFIED', verified_carbon = _verified_tco2e, updated_at = now()
+      WHERE id = _project_id;
+
+      UPDATE public.blockchain_outbox
+      SET status = 'CONFIRMED', record_hash = _record_hash, tx_hash = _tx_hash, completed_at = now()
+      WHERE project_id = _project_id AND status = 'PENDING';
+
+      RETURN jsonb_build_object('project_id', _project_id, 'status', 'VERIFIED');
+    END; $$;
+
+    -- RECORD BLOCKCHAIN FAILURE (Strict identity binding & backoff)
+    CREATE OR REPLACE FUNCTION public.record_blockchain_failure(
+      _project_id uuid,
+      _error_message text,
+      _verifier_id uuid
+    )
+    RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+    BEGIN
+      IF NOT (
+        public.has_role(_verifier_id, 'verifier') OR
+        public.has_role(_verifier_id, 'admin') OR
+        public.is_service_role()
+      ) THEN
+        RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
+      END IF;
+
+      IF NOT public.is_service_role() AND auth.uid() IS DISTINCT FROM _verifier_id THEN
+        RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
+      END IF;
+
+      UPDATE public.blockchain_outbox
+      SET
+        attempts = attempts + 1,
+        last_error = _error_message,
+        locked_until = NULL,
+        locked_by = NULL,
+        next_retry_at = now() + interval '30 seconds',
+        updated_at = now()
+      WHERE project_id = _project_id AND status = 'PENDING';
+
+      RETURN jsonb_build_object('success', true);
+    END; $$;
+
+    -- RECORD SIMULATED DEMO ANCHOR (Strictly sets DEMO_SIMULATED, never VERIFIED)
+    CREATE OR REPLACE FUNCTION public.record_simulated_demo_anchor(
+      _project_id uuid,
+      _record_hash text,
+      _tx_hash text,
+      _verifier_id uuid,
+      _verified_tco2e numeric,
+      _anchored_payload jsonb
+    )
+    RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+    BEGIN
+      IF NOT (
+        public.has_role(_verifier_id, 'verifier') OR
+        public.has_role(_verifier_id, 'admin') OR
+        public.is_service_role()
+      ) THEN
+        RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
+      END IF;
+
+      IF NOT public.is_service_role() AND auth.uid() IS DISTINCT FROM _verifier_id THEN
+        RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
+      END IF;
+
+      INSERT INTO public.blockchain_records (
+        project_id, record_hash, tx_hash, block_number, network, status, verifier_id, verified_tco2e, anchored_payload
+      ) VALUES (
+        _project_id, _record_hash, _tx_hash, 0, 'Simulated Testnet Demo', 'SIMULATED', _verifier_id, _verified_tco2e, _anchored_payload
+      );
+
+      UPDATE public.projects
+      SET status = 'DEMO_SIMULATED', verified_carbon = _verified_tco2e, updated_at = now()
+      WHERE id = _project_id;
+
+      UPDATE public.blockchain_outbox
+      SET status = 'SIMULATED', record_hash = _record_hash, tx_hash = _tx_hash, completed_at = now()
+      WHERE project_id = _project_id AND status = 'PENDING';
+
+      RETURN jsonb_build_object('project_id', _project_id, 'status', 'DEMO_SIMULATED');
+    END; $$;
+
+    -- CLAIM NEXT OUTBOX JOB
+    CREATE OR REPLACE FUNCTION public.claim_next_outbox_job(
+      _worker_id text,
+      _lease_seconds int DEFAULT 60
+    )
+    RETURNS TABLE (
+      id uuid,
+      project_id uuid,
+      payload jsonb,
+      status text,
+      attempts int
+    )
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public AS $$
+    DECLARE
+      v_job public.blockchain_outbox%ROWTYPE;
+      v_lease_interval interval := (_lease_seconds || ' seconds')::interval;
+    BEGIN
+      IF NOT (public.is_verifier() OR public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
+        RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can claim outbox jobs.';
+      END IF;
+
+      SELECT * INTO v_job
+      FROM public.blockchain_outbox
+      WHERE public.blockchain_outbox.status = 'PENDING'
+        AND (public.blockchain_outbox.locked_until IS NULL OR public.blockchain_outbox.locked_until < now())
+        AND public.blockchain_outbox.next_retry_at <= now()
+      ORDER BY public.blockchain_outbox.created_at ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1;
+
+      IF FOUND THEN
+        UPDATE public.blockchain_outbox
+        SET
+          locked_until = now() + v_lease_interval,
+          locked_by = _worker_id,
+          attempts = public.blockchain_outbox.attempts + 1,
+          updated_at = now()
+        WHERE public.blockchain_outbox.id = v_job.id;
+
+        RETURN QUERY
+        SELECT v_job.id, v_job.project_id, v_job.payload, v_job.status, v_job.attempts + 1;
+      END IF;
+
+      RETURN;
     END; $$;
   `);
 
@@ -341,13 +535,11 @@ test("DB Integration: RLS blocks privilege escalation and unauthorized role assi
   const verifierId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
   const attackerId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 
-  // Superuser sets up initial admin and attacker
   await db.exec(`
     INSERT INTO public.user_roles (user_id, role) VALUES ('${adminId}', 'admin');
     INSERT INTO public.user_roles (user_id, role) VALUES ('${attackerId}', 'project_owner');
   `);
 
-  // Context: Attacker (project_owner) tries to self-assign 'verifier' role directly via INSERT
   await setSessionContext(db, "authenticated", attackerId);
   await assert.rejects(
     async () => {
@@ -360,7 +552,6 @@ test("DB Integration: RLS blocks privilege escalation and unauthorized role assi
     "Attacker must be blocked from self-assigning verifier role by user_roles RLS",
   );
 
-  // Context: Attacker tries to elevate role via admin_assign_role RPC
   await assert.rejects(
     async () => {
       await db.exec(`
@@ -371,13 +562,11 @@ test("DB Integration: RLS blocks privilege escalation and unauthorized role assi
     "Attacker must be rejected by admin_assign_role security check",
   );
 
-  // Context: Genuine Admin assigns verifier role to verifierId
   await setSessionContext(db, "authenticated", adminId);
   await db.exec(`
     SELECT public.admin_assign_role('${verifierId}', 'verifier');
   `);
 
-  // Verify role was granted
   const checkRole = await db.query(
     `SELECT role FROM public.user_roles WHERE user_id = '${verifierId}'`,
   );
@@ -391,7 +580,6 @@ test("DB Integration: Only authorized verifiers can perform verification decisio
   const ownerId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
   const projectId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 
-  // Setup roles and project in UNDER_REVIEW
   await db.exec(`
     INSERT INTO public.user_roles (user_id, role) VALUES ('${verifierId}', 'verifier');
     INSERT INTO public.user_roles (user_id, role) VALUES ('${ownerId}', 'project_owner');
@@ -399,7 +587,6 @@ test("DB Integration: Only authorized verifiers can perform verification decisio
     VALUES ('${projectId}', '${ownerId}', 'BC-MNG-INTG', 'Integration Mangrove', 'UNDER_REVIEW', 500);
   `);
 
-  // Context: Owner tries to approve their own project
   await setSessionContext(db, "authenticated", ownerId);
   await assert.rejects(
     async () => {
@@ -413,7 +600,6 @@ test("DB Integration: Only authorized verifiers can perform verification decisio
     "Project owner must be rejected from approving verification",
   );
 
-  // Context: Verifier approves the project
   await setSessionContext(db, "authenticated", verifierId);
   const decisionRes = await db.query(`
     SELECT public.perform_verification_decision(
@@ -426,16 +612,133 @@ test("DB Integration: Only authorized verifiers can perform verification decisio
   assert.strictEqual(result.status, "VERIFIED_PENDING_ANCHOR");
   assert.strictEqual(result.verified_carbon, 520.5);
 
-  // Check that project status transitioned to VERIFIED_PENDING_ANCHOR
   const projCheck = await db.query(`SELECT status FROM public.projects WHERE id = '${projectId}';`);
   assert.strictEqual(projCheck.rows[0].status, "VERIFIED_PENDING_ANCHOR");
 
-  // Check that outbox record was created
   const outboxCheck = await db.query(
     `SELECT status FROM public.blockchain_outbox WHERE project_id = '${projectId}';`,
   );
   assert.strictEqual(outboxCheck.rows.length, 1);
   assert.strictEqual(outboxCheck.rows[0].status, "PENDING");
+});
+
+test("DB Integration: confirm_blockchain_anchor binds caller identity to auth.uid and rejects non-verifiers", async () => {
+  const db = await initTestDatabase();
+
+  const verifierId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const attackerId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  const projectId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
+  await db.exec(`
+    INSERT INTO public.user_roles (user_id, role) VALUES ('${verifierId}', 'verifier');
+    INSERT INTO public.user_roles (user_id, role) VALUES ('${attackerId}', 'project_owner');
+    INSERT INTO public.projects (id, owner_id, project_code, name, status, estimated_carbon)
+    VALUES ('${projectId}', '${attackerId}', 'BC-MNG-BIND', 'Identity Binding Test', 'VERIFIED_PENDING_ANCHOR', 500);
+  `);
+
+  // 1. Attacker attempts to call confirm_blockchain_anchor supplying real verifier's ID
+  await setSessionContext(db, "authenticated", attackerId);
+  await assert.rejects(
+    async () => {
+      await db.exec(`
+        SELECT public.confirm_blockchain_anchor(
+          '${projectId}', '0x123', '0xabc', 100, 'Polygon Amoy', 'CONFIRMED', '${verifierId}', 500, '{"test": true}'::jsonb
+        );
+      `);
+    },
+    /Caller identity mismatch: auth.uid does not match verifier_id/,
+    "Must fail closed when authenticated caller does not match supplied _verifier_id",
+  );
+
+  // 2. Attacker attempts to call record_blockchain_failure supplying real verifier's ID
+  await assert.rejects(
+    async () => {
+      await db.exec(`
+        SELECT public.record_blockchain_failure(
+          '${projectId}', 'Malicious failure signal', '${verifierId}'
+        );
+      `);
+    },
+    /Caller identity mismatch: auth.uid does not match verifier_id/,
+    "record_blockchain_failure must also bind identity strictly to auth.uid",
+  );
+});
+
+test("DB Integration: confirm_blockchain_anchor rejects SIMULATED status and enforces genuine on-chain finality", async () => {
+  const db = await initTestDatabase();
+
+  const verifierId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const projectId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
+  await db.exec(`
+    INSERT INTO public.user_roles (user_id, role) VALUES ('${verifierId}', 'verifier');
+    INSERT INTO public.projects (id, owner_id, project_code, name, status, estimated_carbon)
+    VALUES ('${projectId}', '${verifierId}', 'BC-MNG-SIM', 'Simulation Test', 'VERIFIED_PENDING_ANCHOR', 500);
+  `);
+
+  await setSessionContext(db, "authenticated", verifierId);
+
+  // 1. Attempt to promote to VERIFIED with SIMULATED status -> RPC MUST REJECT!
+  await assert.rejects(
+    async () => {
+      await db.exec(`
+        SELECT public.confirm_blockchain_anchor(
+          '${projectId}', '0x123', '0xsimulated', 0, 'Polygon Amoy', 'SIMULATED', '${verifierId}', 500, '{"simulated": true}'::jsonb
+        );
+      `);
+    },
+    /Rejected: Only genuine CONFIRMED blockchain records can promote project to VERIFIED/,
+    "Confirmation RPC must strictly reject simulated records from promoting to VERIFIED",
+  );
+
+  // 2. Instead, record_simulated_demo_anchor transitions to distinct DEMO_SIMULATED status
+  await db.exec(`
+    SELECT public.record_simulated_demo_anchor(
+      '${projectId}', '0x123', '0xsimulated', '${verifierId}', 500, '{"simulated": true}'::jsonb
+    );
+  `);
+
+  const projCheck = await db.query(`SELECT status FROM public.projects WHERE id = '${projectId}';`);
+  assert.strictEqual(
+    projCheck.rows[0].status,
+    "DEMO_SIMULATED",
+    "Simulated anchoring must transition to DEMO_SIMULATED, never VERIFIED",
+  );
+});
+
+test("DB Integration: Outbox worker safely claims jobs with lease and increments attempts", async () => {
+  const db = await initTestDatabase();
+
+  const verifierId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const projectId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
+  await db.exec(`
+    INSERT INTO public.user_roles (user_id, role) VALUES ('${verifierId}', 'verifier');
+    INSERT INTO public.projects (id, owner_id, project_code, name, status, estimated_carbon)
+    VALUES ('${projectId}', '${verifierId}', 'BC-MNG-WORKER', 'Worker Test', 'VERIFIED_PENDING_ANCHOR', 500);
+    INSERT INTO public.blockchain_outbox (project_id, payload, status)
+    VALUES ('${projectId}', '{"project_code": "BC-MNG-WORKER"}'::jsonb, 'PENDING');
+  `);
+
+  await setSessionContext(db, "authenticated", verifierId);
+
+  // Claim job as Worker 1
+  const claimRes = await db.query(`
+    SELECT * FROM public.claim_next_outbox_job('worker-alpha', 60);
+  `);
+
+  assert.strictEqual(claimRes.rows.length, 1);
+  assert.strictEqual(claimRes.rows[0].attempts, 1);
+
+  // Worker 2 attempts to claim simultaneously -> SKIP LOCKED ensures 0 rows returned
+  const concurrentClaim = await db.query(`
+    SELECT * FROM public.claim_next_outbox_job('worker-beta', 60);
+  `);
+  assert.strictEqual(
+    concurrentClaim.rows.length,
+    0,
+    "Concurrent claim must skip locked leased job",
+  );
 });
 
 test("DB Integration: Verification reviews and carbon impact records are strictly immutable", async () => {
@@ -447,7 +750,6 @@ test("DB Integration: Verification reviews and carbon impact records are strictl
   const reviewId = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
   const impactId = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 
-  // Setup initial records
   await db.exec(`
     INSERT INTO public.user_roles (user_id, role) VALUES ('${verifierId}', 'verifier');
     INSERT INTO public.user_roles (user_id, role) VALUES ('${ownerId}', 'project_owner');
@@ -461,34 +763,28 @@ test("DB Integration: Verification reviews and carbon impact records are strictl
     VALUES ('${impactId}', '${projectId}', 500, '${verifierId}', 'IPCC-2019');
   `);
 
-  // Switch context to authenticated owner
   await setSessionContext(db, "authenticated", ownerId);
 
-  // 1. Attempt to UPDATE verification_reviews (blocked by RLS USING (false))
   const updateReviewRes = await db.query(`
     UPDATE public.verification_reviews SET comments = 'Tampered review' WHERE id = '${reviewId}';
   `);
   assert.strictEqual(updateReviewRes.affectedRows, 0, "No rows updated on verification_reviews");
 
-  // 2. Attempt to DELETE verification_reviews (blocked by RLS USING (false))
   const deleteReviewRes = await db.query(`
     DELETE FROM public.verification_reviews WHERE id = '${reviewId}';
   `);
   assert.strictEqual(deleteReviewRes.affectedRows, 0, "No rows deleted from verification_reviews");
 
-  // 3. Attempt to UPDATE carbon_impact_records (blocked by RLS USING (false))
   const updateImpactRes = await db.query(`
     UPDATE public.carbon_impact_records SET verified_tco2e = 999999 WHERE id = '${impactId}';
   `);
   assert.strictEqual(updateImpactRes.affectedRows, 0, "No rows updated on carbon_impact_records");
 
-  // 4. Attempt to DELETE carbon_impact_records (blocked by RLS USING (false))
   const deleteImpactRes = await db.query(`
     DELETE FROM public.carbon_impact_records WHERE id = '${impactId}';
   `);
   assert.strictEqual(deleteImpactRes.affectedRows, 0, "No rows deleted from carbon_impact_records");
 
-  // 5. Attempt to UPDATE verified project (owners update own projects requires status IN ('DRAFT', 'CORRECTION_REQUIRED'))
   const updateProjRes = await db.query(`
     UPDATE public.projects SET estimated_carbon = 999999 WHERE id = '${projectId}';
   `);

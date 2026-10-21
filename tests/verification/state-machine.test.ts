@@ -409,7 +409,7 @@ test("State Machine: approveProject handles anchoring failures and transitions t
     },
   ];
 
-  // Client where perform_verification_decision succeeds, but confirm_blockchain_anchor errors
+  // Client where perform_verification_decision succeeds, but record_simulated_demo_anchor errors
   const mockSupabase = {
     auth: {
       getUser: async () => ({
@@ -443,8 +443,8 @@ test("State Machine: approveProject handles anchoring failures and transitions t
       if (fn === "perform_verification_decision") {
         return { data: { success: true }, error: null };
       }
-      if (fn === "confirm_blockchain_anchor") {
-        // Simulate DB failure writing confirmation
+      if (fn === "record_simulated_demo_anchor") {
+        // Simulate DB failure writing simulation record
         return { data: null, error: { message: "Lock timeout on blockchain_records table" } };
       }
       if (fn === "record_blockchain_failure") {
@@ -456,7 +456,7 @@ test("State Machine: approveProject handles anchoring failures and transitions t
     },
   };
 
-  // 1. If confirm_blockchain_anchor fails, approveProject throws critical error
+  // 1. If database fails while recording anchor, approveProject throws critical error
   await assert.rejects(
     async () => {
       await approveProject({
@@ -467,13 +467,40 @@ test("State Machine: approveProject handles anchoring failures and transitions t
         confirmedCarbon: 500,
       });
     },
-    /Critical database error: Failed to record confirmed blockchain anchor.*State remains VERIFIED_PENDING_ANCHOR/,
-    "Must never report VERIFIED when database confirmation of blockchain anchor fails",
+    /Critical database error: Failed to record demo simulation state/,
+    "Must throw critical database error if recording anchor state fails",
   );
 
-  // 2. Recovery: retryProjectAnchor successfully recovers VERIFIED_PENDING_ANCHOR project
+  // 2. Simulated demo anchoring produces distinct DEMO_SIMULATED status (never VERIFIED)
+  const mockSimSuccessSupabase = {
+    ...mockSupabase,
+    rpc: async (fn: string) => {
+      if (fn === "record_simulated_demo_anchor") {
+        recordedSuccess = true;
+        return { data: { success: true }, error: null };
+      }
+      return { data: { success: true }, error: null };
+    },
+  };
+
+  const simResult = await approveProject({
+    supabase: mockSimSuccessSupabase as unknown as RegistryClient,
+    userId: "00000000-0000-0000-0000-000000000001",
+    verifierEmail: "verifier@test.org",
+    projectId: "00000000-0000-0000-0000-000000000002",
+    confirmedCarbon: 500,
+  });
+
+  assert.strictEqual(
+    simResult.status,
+    "DEMO_SIMULATED",
+    "Simulated anchoring must produce DEMO_SIMULATED, never production VERIFIED",
+  );
+  assert.strictEqual(recordedSuccess, true);
+
+  // 3. Recovery: retryProjectAnchor strictly alerts and throws if record_blockchain_failure fails
   const pendingProject = { ...projectData, status: "VERIFIED_PENDING_ANCHOR" };
-  const mockRecoverySupabase = {
+  const mockFailingRetrySupabase = {
     auth: {
       getUser: async () => ({
         data: {
@@ -492,46 +519,54 @@ test("State Machine: approveProject handles anchoring failures and transitions t
             if (table === "evidence") {
               return Promise.resolve({ data: validEvidence, error: null }).then(resolve);
             }
-            if (table === "carbon_impact_records") {
-              return Promise.resolve({
-                data: [{ verified_tco2e: 500 }],
-                error: null,
-              }).then(resolve);
-            }
             return Promise.resolve({ data: [pendingProject], error: null }).then(resolve);
           },
           single: async () => ({ data: pendingProject, error: null }),
           maybeSingle: async () => ({
-            data:
-              table === "user_roles"
-                ? { role: "verifier" }
-                : table === "carbon_impact_records"
-                  ? { verified_tco2e: 500 }
-                  : pendingProject,
+            data: table === "user_roles" ? { role: "verifier" } : pendingProject,
             error: null,
           }),
         }),
       }),
     }),
     rpc: async (fn: string) => {
-      if (fn === "confirm_blockchain_anchor") {
-        recordedSuccess = true;
-        return { data: { success: true }, error: null };
+      if (fn === "claim_project_outbox_job") {
+        return {
+          data: [
+            {
+              id: "job-1",
+              payload: {
+                project_code: "BC-MNG-STORED",
+                project_name: "Stored Payload Mangrove",
+                ecosystem: "MANGROVE",
+                verified_tco2e: 500,
+                methodology: "IPCC-2019-WETLANDS-MNG",
+                evidence_count: 1,
+                evidence_hashes: ["a".repeat(64)],
+                verifier_id: "00000000-0000-0000-0000-000000000001",
+                verified_at: new Date().toISOString(),
+              },
+            },
+          ],
+          error: null,
+        };
+      }
+      if (fn === "record_simulated_demo_anchor") {
+        return { data: null, error: { message: "Database outage during retry record" } };
       }
       return { data: { success: true }, error: null };
     },
   };
 
-  const retryResult = await retryProjectAnchor(
-    mockRecoverySupabase as unknown as RegistryClient,
-    pendingProject.id,
-    "00000000-0000-0000-0000-000000000001",
-  );
-
-  assert.strictEqual(retryResult.status, "VERIFIED");
-  assert.strictEqual(
-    recordedSuccess,
-    true,
-    "confirm_blockchain_anchor RPC must be invoked on retry",
+  await assert.rejects(
+    async () => {
+      await retryProjectAnchor(
+        mockFailingRetrySupabase as unknown as RegistryClient,
+        pendingProject.id,
+        "00000000-0000-0000-0000-000000000001",
+      );
+    },
+    /Retry simulation record failed: Database outage during retry record/,
+    "retryProjectAnchor must never swallow database failures during retries",
   );
 });

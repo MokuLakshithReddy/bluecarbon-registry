@@ -6,7 +6,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { anchorVerifiedRecord } from "./blockchain.server.ts";
+import { anchorVerifiedRecord, type AnchorPayload } from "./blockchain.server.ts";
 import { CARBON_METHODOLOGY_ID } from "./domain.ts";
 import type { PublicProjectPayload, PublicProjectSummary } from "./public-types.ts";
 
@@ -324,6 +324,26 @@ export async function approveProject(input: DecisionInput) {
   const evidenceHashes = evidence.map((e) => e.file_hash as string);
   const verifiedAt = new Date().toISOString();
 
+  // Canonical payload used for anchoring and stored in outbox as source of truth
+  const anchorPayload: AnchorPayload = {
+    project_code: project.project_code,
+    project_name: project.name,
+    ecosystem: project.ecosystem,
+    state: project.state,
+    district: project.district,
+    latitude: project.latitude,
+    longitude: project.longitude,
+    area_hectares: project.area_hectares == null ? null : Number(project.area_hectares),
+    restoration_start: project.restoration_start,
+    restoration_end: project.restoration_end,
+    verified_tco2e: verifiedCarbon,
+    methodology: CARBON_METHODOLOGY_ID,
+    evidence_count: evidence.length,
+    evidence_hashes: evidenceHashes,
+    verifier_id: input.userId,
+    verified_at: verifiedAt,
+  };
+
   // 2. Execute atomic database transaction (Stage 1: UNDER_REVIEW -> VERIFIED_PENDING_ANCHOR)
   const supabaseWithRpc = input.supabase as unknown as {
     rpc: (
@@ -342,6 +362,7 @@ export async function approveProject(input: DecisionInput) {
       _verifier_id: input.userId,
       _verifier_email: input.verifierEmail,
       _expected_status: "UNDER_REVIEW",
+      _anchor_payload: anchorPayload,
     },
   );
 
@@ -353,42 +374,24 @@ export async function approveProject(input: DecisionInput) {
   }
 
   // 3. Anchor verified record on blockchain
-  const anchor = await anchorVerifiedRecord({
-    project_code: project.project_code,
-    project_name: project.name,
-    ecosystem: project.ecosystem,
-    state: project.state,
-    district: project.district,
-    latitude: project.latitude,
-    longitude: project.longitude,
-    area_hectares: project.area_hectares == null ? null : Number(project.area_hectares),
-    restoration_start: project.restoration_start,
-    restoration_end: project.restoration_end,
-    verified_tco2e: verifiedCarbon,
-    methodology: CARBON_METHODOLOGY_ID,
-    evidence_count: evidence.length,
-    evidence_hashes: evidenceHashes,
-    verifier_id: input.userId,
-    verified_at: verifiedAt,
-  });
+  const anchor = await anchorVerifiedRecord(anchorPayload);
 
   // 4. Handle Blockchain Result & Transition State Durably
-  if (anchor.status === "CONFIRMED" || anchor.status === "SIMULATED") {
+  if (anchor.status === "CONFIRMED") {
     // Stage 2 completion: Promote project from VERIFIED_PENDING_ANCHOR to VERIFIED
+    // ONLY genuine CONFIRMED on-chain status qualifies for VERIFIED
     const { error: confirmError } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
       _project_id: project.id,
       _record_hash: anchor.record_hash,
       _tx_hash: anchor.tx_hash,
       _block_number: anchor.block_number,
       _network: anchor.network,
-      _status: anchor.status,
+      _status: "CONFIRMED",
       _verifier_id: input.userId,
       _verified_tco2e: verifiedCarbon,
       _anchored_payload: {
-        project_code: project.project_code,
-        verified_tco2e: verifiedCarbon,
-        methodology: CARBON_METHODOLOGY_ID,
-        simulated: anchor.simulated,
+        ...anchorPayload,
+        simulated: false,
         explorer_url: anchor.explorer_url ?? null,
         error: anchor.error ?? null,
       },
@@ -402,6 +405,35 @@ export async function approveProject(input: DecisionInput) {
     }
 
     return { status: "VERIFIED" as const, verifiedCarbon, anchor };
+  }
+
+  if (anchor.status === "SIMULATED") {
+    // Demo Mode Simulation: Explicitly records demo simulation in distinct DEMO_SIMULATED status (NEVER VERIFIED)
+    const { error: simError } = await supabaseWithRpc.rpc("record_simulated_demo_anchor", {
+      _project_id: project.id,
+      _record_hash: anchor.record_hash,
+      _tx_hash: anchor.tx_hash,
+      _verifier_id: input.userId,
+      _verified_tco2e: verifiedCarbon,
+      _anchored_payload: {
+        ...anchorPayload,
+        simulated: true,
+        explorer_url: null,
+      },
+    });
+
+    if (simError) {
+      throw new Error(
+        `Critical database error: Failed to record demo simulation state for ${project.project_code}: ${simError.message}.`,
+      );
+    }
+
+    return {
+      status: "DEMO_SIMULATED" as const,
+      verifiedCarbon,
+      anchor,
+      simulated: true,
+    };
   }
 
   // Anchoring failed or is pending: Record failure in durable outbox, do NOT report as VERIFIED
@@ -427,7 +459,9 @@ export async function approveProject(input: DecisionInput) {
 
 /**
  * Idempotently retries blockchain anchoring for a project in VERIFIED_PENDING_ANCHOR status.
- * Used for recovery after crashes or temporary RPC outages between database commit and blockchain submission.
+ * Safely claims the durable outbox job with a lease to prevent race conditions and concurrent double-anchoring.
+ * Reads the canonical stored outbox payload as the authoritative source of truth.
+ * Strictly verifies identity binding and verifies that retry failures are durably persisted.
  */
 export async function retryProjectAnchor(
   supabase: VerifierClient,
@@ -435,6 +469,15 @@ export async function retryProjectAnchor(
   verifierId: string,
 ) {
   await assertVerifier(supabase, verifierId);
+
+  // Strict identity binding: authenticated user's ID must match verifierId
+  const { data: userRes } = await supabase.auth.getUser();
+  if (userRes?.user && userRes.user.id !== verifierId) {
+    throw new Error(
+      `Caller identity mismatch: auth.uid (${userRes.user.id}) does not match verifierId (${verifierId}).`,
+    );
+  }
+
   const project = await loadProject(supabase, projectId);
 
   if (project.status !== "VERIFIED_PENDING_ANCHOR") {
@@ -443,39 +486,6 @@ export async function retryProjectAnchor(
     );
   }
 
-  const { data: evidence, error: evidenceError } = await supabase
-    .from("evidence")
-    .select("file_hash")
-    .eq("project_id", project.id);
-
-  if (evidenceError || !evidence || evidence.length === 0) {
-    throw new Error(
-      `Cannot retry anchor: missing or unreadable evidence for ${project.project_code}`,
-    );
-  }
-
-  const evidenceHashes = evidence.map((e) => e.file_hash as string);
-  const verifiedCarbon = Number(project.verified_carbon || project.estimated_carbon || 0);
-
-  const anchor = await anchorVerifiedRecord({
-    project_code: project.project_code,
-    project_name: project.name,
-    ecosystem: project.ecosystem,
-    state: project.state,
-    district: project.district,
-    latitude: project.latitude,
-    longitude: project.longitude,
-    area_hectares: project.area_hectares == null ? null : Number(project.area_hectares),
-    restoration_start: project.restoration_start,
-    restoration_end: project.restoration_end,
-    verified_tco2e: verifiedCarbon,
-    methodology: CARBON_METHODOLOGY_ID,
-    evidence_count: evidence.length,
-    evidence_hashes: evidenceHashes,
-    verifier_id: verifierId,
-    verified_at: new Date().toISOString(),
-  });
-
   const supabaseWithRpc = supabase as unknown as {
     rpc: (
       fn: string,
@@ -483,21 +493,84 @@ export async function retryProjectAnchor(
     ) => Promise<{ data: unknown; error: { message: string } | null }>;
   };
 
-  if (anchor.status === "CONFIRMED" || anchor.status === "SIMULATED") {
+  // 1. Claim outbox job with row-level lock and lease
+  const workerId = `retry-verifier-${verifierId}`;
+  const { data: claimData, error: claimErr } = await supabaseWithRpc.rpc(
+    "claim_project_outbox_job",
+    {
+      _project_id: projectId,
+      _worker_id: workerId,
+      _lease_seconds: 60,
+    },
+  );
+
+  if (claimErr) {
+    throw new Error(`Failed to claim outbox job for ${project.project_code}: ${claimErr.message}`);
+  }
+
+  const claimedJobs = (claimData as Array<{ id: string; payload: AnchorPayload }>) || [];
+
+  let payload: AnchorPayload;
+  let jobId: string | null = null;
+
+  const firstJob = claimedJobs[0];
+  if (firstJob) {
+    // Authoritative source of truth: stored outbox payload
+    jobId = firstJob.id;
+    payload = firstJob.payload;
+  } else {
+    // If no active outbox record found (e.g. legacy row), safely reconstruct from database
+    const { data: evidence, error: evidenceError } = await supabase
+      .from("evidence")
+      .select("file_hash")
+      .eq("project_id", project.id);
+
+    if (evidenceError || !evidence || evidence.length === 0) {
+      throw new Error(
+        `Cannot retry anchor: missing or unreadable evidence for ${project.project_code}`,
+      );
+    }
+
+    const evidenceHashes = evidence.map((e) => e.file_hash as string);
+    const verifiedCarbon = Number(project.verified_carbon || project.estimated_carbon || 0);
+
+    payload = {
+      project_code: project.project_code,
+      project_name: project.name,
+      ecosystem: project.ecosystem,
+      state: project.state,
+      district: project.district,
+      latitude: project.latitude,
+      longitude: project.longitude,
+      area_hectares: project.area_hectares == null ? null : Number(project.area_hectares),
+      restoration_start: project.restoration_start,
+      restoration_end: project.restoration_end,
+      verified_tco2e: verifiedCarbon,
+      methodology: CARBON_METHODOLOGY_ID,
+      evidence_count: evidence.length,
+      evidence_hashes: evidenceHashes,
+      verifier_id: verifierId,
+      verified_at: new Date().toISOString(),
+    };
+  }
+
+  // 2. Submit anchor transaction
+  const anchor = await anchorVerifiedRecord(payload);
+
+  // 3. Handle confirmed on-chain finality
+  if (anchor.status === "CONFIRMED") {
     const { error: confirmError } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
       _project_id: project.id,
       _record_hash: anchor.record_hash,
       _tx_hash: anchor.tx_hash,
       _block_number: anchor.block_number,
       _network: anchor.network,
-      _status: anchor.status,
+      _status: "CONFIRMED",
       _verifier_id: verifierId,
-      _verified_tco2e: verifiedCarbon,
+      _verified_tco2e: payload.verified_tco2e,
       _anchored_payload: {
-        project_code: project.project_code,
-        verified_tco2e: verifiedCarbon,
-        methodology: CARBON_METHODOLOGY_ID,
-        simulated: anchor.simulated,
+        ...payload,
+        simulated: false,
         explorer_url: anchor.explorer_url ?? null,
       },
     });
@@ -506,13 +579,169 @@ export async function retryProjectAnchor(
     return { status: "VERIFIED" as const, anchor };
   }
 
-  await supabaseWithRpc.rpc("record_blockchain_failure", {
+  // 4. Handle simulated demo mode (never promote to VERIFIED)
+  if (anchor.status === "SIMULATED") {
+    const { error: simError } = await supabaseWithRpc.rpc("record_simulated_demo_anchor", {
+      _project_id: project.id,
+      _record_hash: anchor.record_hash,
+      _tx_hash: anchor.tx_hash,
+      _verifier_id: verifierId,
+      _verified_tco2e: payload.verified_tco2e,
+      _anchored_payload: {
+        ...payload,
+        simulated: true,
+        explorer_url: null,
+      },
+    });
+
+    if (simError) throw new Error(`Retry simulation record failed: ${simError.message}`);
+    return { status: "DEMO_SIMULATED" as const, anchor, simulated: true };
+  }
+
+  // 5. Retry failed: Durably record failure in outbox and audit log. Strictly check for persistence errors.
+  const { error: failErr } = await supabaseWithRpc.rpc("record_blockchain_failure", {
     _project_id: project.id,
     _error_message: anchor.error || "Retry failed to achieve confirmation.",
     _verifier_id: verifierId,
   });
 
+  if (failErr) {
+    throw new Error(
+      `CRITICAL: Failed to durably record retry failure state for ${project.project_code}: ${failErr.message}`,
+    );
+  }
+
+  if (jobId) {
+    const { error: outboxFailErr } = await supabaseWithRpc.rpc("fail_outbox_job", {
+      _job_id: jobId,
+      _error_message: anchor.error || "Retry failed to achieve confirmation.",
+      _retry_delay_seconds: 30,
+      _max_attempts: 5,
+    });
+    if (outboxFailErr) {
+      throw new Error(
+        `CRITICAL: Failed to update outbox retry state for job ${jobId}: ${outboxFailErr.message}`,
+      );
+    }
+  }
+
   return { status: "VERIFIED_PENDING_ANCHOR" as const, anchor, error: anchor.error };
+}
+
+/**
+ * Independent outbox worker function.
+ * Safely claims the next pending job using SKIP LOCKED, processes anchoring idempotently
+ * from the stored payload, and applies exponential backoff on failure.
+ */
+export async function processOutboxJob(
+  supabase: VerifierClient,
+  workerId: string = `worker-${Math.random().toString(36).substring(2, 9)}`,
+  leaseSeconds: number = 60,
+) {
+  const supabaseWithRpc = supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+
+  const { data: claimData, error: claimErr } = await supabaseWithRpc.rpc("claim_next_outbox_job", {
+    _worker_id: workerId,
+    _lease_seconds: leaseSeconds,
+  });
+
+  if (claimErr) {
+    throw new Error(`Outbox worker claim error: ${claimErr.message}`);
+  }
+
+  const jobs =
+    (claimData as Array<{
+      id: string;
+      project_id: string;
+      payload: AnchorPayload;
+      attempts: number;
+    }>) || [];
+  const firstJob = jobs[0];
+  if (!firstJob) {
+    return { processed: false, reason: "NO_PENDING_JOBS" as const };
+  }
+
+  const job = firstJob;
+  const payload = job.payload;
+
+  try {
+    const anchor = await anchorVerifiedRecord(payload);
+
+    if (anchor.status === "CONFIRMED") {
+      const { error: confirmErr } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
+        _project_id: job.project_id,
+        _record_hash: anchor.record_hash,
+        _tx_hash: anchor.tx_hash,
+        _block_number: anchor.block_number,
+        _network: anchor.network,
+        _status: "CONFIRMED",
+        _verifier_id: payload.verifier_id,
+        _verified_tco2e: payload.verified_tco2e,
+        _anchored_payload: {
+          ...payload,
+          simulated: false,
+          explorer_url: anchor.explorer_url ?? null,
+        },
+      });
+
+      if (confirmErr) throw new Error(`Outbox confirmation error: ${confirmErr.message}`);
+      return {
+        processed: true,
+        status: "VERIFIED" as const,
+        jobId: job.id,
+        txHash: anchor.tx_hash,
+      };
+    }
+
+    if (anchor.status === "SIMULATED") {
+      const { error: simErr } = await supabaseWithRpc.rpc("record_simulated_demo_anchor", {
+        _project_id: job.project_id,
+        _record_hash: anchor.record_hash,
+        _tx_hash: anchor.tx_hash,
+        _verifier_id: payload.verifier_id,
+        _verified_tco2e: payload.verified_tco2e,
+        _anchored_payload: {
+          ...payload,
+          simulated: true,
+          explorer_url: null,
+        },
+      });
+
+      if (simErr) throw new Error(`Outbox simulation record error: ${simErr.message}`);
+      return { processed: true, status: "DEMO_SIMULATED" as const, jobId: job.id };
+    }
+
+    // Anchoring failed: apply exponential backoff
+    const delay = Math.min(300, 30 * Math.pow(2, job.attempts - 1));
+    const { error: failErr } = await supabaseWithRpc.rpc("fail_outbox_job", {
+      _job_id: job.id,
+      _error_message: anchor.error || "Anchoring attempt failed.",
+      _retry_delay_seconds: delay,
+      _max_attempts: 5,
+    });
+
+    if (failErr) throw new Error(`Failed to record outbox failure: ${failErr.message}`);
+    return {
+      processed: true,
+      status: "PENDING_RETRY" as const,
+      jobId: job.id,
+      retryDelaySeconds: delay,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    await supabaseWithRpc.rpc("fail_outbox_job", {
+      _job_id: job.id,
+      _error_message: errorMsg,
+      _retry_delay_seconds: 60,
+      _max_attempts: 5,
+    });
+    throw err;
+  }
 }
 
 /** Requests correction. Enforces UNDER_REVIEW -> CORRECTION_REQUIRED transition atomically with mandatory comments. */

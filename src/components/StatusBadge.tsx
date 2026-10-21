@@ -8,6 +8,7 @@ const STATUS_STYLES: Record<ProjectStatus, string> = {
   CORRECTION_REQUIRED: "bg-warning/20 text-warning-foreground border-warning/50",
   VERIFIED_PENDING_ANCHOR: "bg-amber-500/15 text-amber-500 border-amber-500/35",
   VERIFIED: "bg-success/12 text-success border-success/35",
+  DEMO_SIMULATED: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/35",
   REJECTED: "bg-destructive/10 text-destructive border-destructive/30",
 };
 

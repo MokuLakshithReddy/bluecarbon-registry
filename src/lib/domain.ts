@@ -16,6 +16,7 @@ export type ProjectStatus =
   | "CORRECTION_REQUIRED"
   | "VERIFIED_PENDING_ANCHOR"
   | "VERIFIED"
+  | "DEMO_SIMULATED"
   | "REJECTED";
 
 export type Ecosystem = "MANGROVE" | "SEAGRASS" | "SALT_MARSH" | "COASTAL_WETLAND" | "OTHER";
@@ -27,6 +28,7 @@ export const STATUS_LABEL: Record<ProjectStatus, string> = {
   CORRECTION_REQUIRED: "Correction Required",
   VERIFIED_PENDING_ANCHOR: "Pending On-Chain Anchor",
   VERIFIED: "Verified",
+  DEMO_SIMULATED: "Demo Simulated (Unverified)",
   REJECTED: "Rejected",
 };
 
