@@ -12,17 +12,18 @@ concurrency:
 
 jobs:
   test:
-    name: Test, Lint & Security Audit (Bun)
+    name: Test, Lint & Security Audit (Node.js)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Bun Runtime
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
+          cache: "npm"
 
       - name: Check for committed environment secrets
         run: |
@@ -31,17 +32,17 @@ jobs:
             exit 1
           fi
 
-      - name: Install dependencies (reproducible frozen lockfile)
-        run: bun install --frozen-lockfile
+      - name: Install dependencies (reproducible clean install)
+        run: npm ci
 
       - name: Run automated test suite
-        run: bun test
+        run: npm test
 
       - name: Run TypeScript typecheck
-        run: bun run typecheck
+        run: npm run typecheck
 
       - name: Run code linter (blocking)
-        run: bun run lint
+        run: npm run lint
 
   build:
     name: Production Build Verification
@@ -52,13 +53,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Bun Runtime
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
+          cache: "npm"
 
-      - name: Install dependencies (reproducible frozen lockfile)
-        run: bun install --frozen-lockfile
+      - name: Install dependencies (reproducible clean install)
+        run: npm ci
 
       - name: Build production bundle
         env:
@@ -68,4 +70,4 @@ jobs:
           SUPABASE_PROJECT_ID: "ci-mock-project"
           SUPABASE_URL: "https://ci-mock-project.supabase.co"
           SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ci_mock_key"
-        run: bun run build
+        run: npm run build
