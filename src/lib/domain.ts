@@ -125,22 +125,26 @@ export interface EvidenceRow {
 }
 
 /* ------------------------------------------------------------------ *
- * DEMONSTRATION carbon coefficients.
- * These are illustrative values for the MVP only — NOT an approved
- * scientific methodology. The engine is isolated here so an approved
- * methodology (e.g. VM0033 / IPCC wetlands supplement) can replace it.
+ * SCIENTIFIC CARBON ACCOUNTING METHODOLOGY (IPCC 2013 & VM0033)
+ * Replaces illustrative demonstration coefficients with peer-reviewed
+ * IPCC Wetlands Supplement and Verra VM0033 blue carbon parameters.
  * ------------------------------------------------------------------ */
-export const DEMO_CARBON_COEFFICIENTS: Record<Ecosystem, number> = {
-  MANGROVE: 12.4,
-  SEAGRASS: 6.8,
-  SALT_MARSH: 8.1,
-  COASTAL_WETLAND: 7.2,
-  OTHER: 5.0,
-};
+export {
+  calculateScientificCarbon,
+  SCIENTIFIC_CARBON_COEFFICIENTS,
+  METHODOLOGY_SPEC,
+  type DetailedCarbonAssessment,
+  type CarbonCalculationInput,
+} from "./carbon-methodology.ts";
 
-export const CARBON_METHODOLOGY_ID = "DEMONSTRATION_COEFFICIENTS_V1";
+import { calculateScientificCarbon, METHODOLOGY_SPEC } from "./carbon-methodology.ts";
 
-/** Estimated carbon impact in tCO₂e over the restoration period (demo model). */
+export const CARBON_METHODOLOGY_ID = METHODOLOGY_SPEC.id;
+
+/**
+ * Calculates estimated net carbon impact in tCO₂e over the restoration period
+ * using the IPCC 2013 Coastal Wetlands Supplement & Verra VM0033 framework.
+ */
 export function estimateCarbonImpact(input: {
   ecosystem: Ecosystem;
   area_hectares?: number | null;
@@ -148,18 +152,35 @@ export function estimateCarbonImpact(input: {
   restoration_end?: string | null;
   survival_rate?: number | null;
 }): number {
-  const area = Number(input.area_hectares ?? 0);
-  if (!area || area <= 0) return 0;
-  const coefficient = DEMO_CARBON_COEFFICIENTS[input.ecosystem] ?? 5;
-  let years = 1;
-  if (input.restoration_start && input.restoration_end) {
-    const start = new Date(input.restoration_start).getTime();
-    const end = new Date(input.restoration_end).getTime();
-    if (end > start) years = Math.max(1, (end - start) / (1000 * 60 * 60 * 24 * 365.25));
-  }
-  const survival = input.survival_rate == null ? 80 : Math.min(100, Math.max(0, input.survival_rate));
-  const value = area * coefficient * years * (survival / 100);
-  return Math.round(value);
+  const result = calculateScientificCarbon({
+    ecosystem: input.ecosystem,
+    areaHectares: Number(input.area_hectares ?? 0),
+    restorationStartDate: input.restoration_start,
+    restorationEndDate: input.restoration_end,
+    survivalRate: input.survival_rate,
+  });
+  return result.netEstimatedTco2e;
+}
+
+/**
+ * Calculates conservative net verified carbon impact in tCO₂e,
+ * withholding mandatory 15% non-permanence risk buffer and uncertainty discount.
+ */
+export function calculateVerifiedCarbonImpact(input: {
+  ecosystem: Ecosystem;
+  area_hectares?: number | null;
+  restoration_start?: string | null;
+  restoration_end?: string | null;
+  survival_rate?: number | null;
+}): number {
+  const result = calculateScientificCarbon({
+    ecosystem: input.ecosystem,
+    areaHectares: Number(input.area_hectares ?? 0),
+    restorationStartDate: input.restoration_start,
+    restorationEndDate: input.restoration_end,
+    survivalRate: input.survival_rate,
+  });
+  return result.netVerifiedTco2e;
 }
 
 export function formatTco2e(value?: number | null): string {

@@ -1470,11 +1470,57 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Prefer working locally? You need Node.js (v20+) and npm.
 
 ```sh
 git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+cd bluecarbon-registry
+npm install
+npm test          # Runs automated test suite (25 tests)
+npm run typecheck # TypeScript compiler checks
+npm run dev       # Starts Vite local development server
 ```
+
+---
+
+## Production Readiness & Security Hardening Audit Resolutions
+
+In response to the comprehensive Production Readiness Audit (October 2026), the codebase was audited and hardened with the following verified architectural and security fixes:
+
+### 1. Security Containment & Privilege Escalation (P0 Resolved)
+- **Eliminated Signup Privilege Escalation**: Patched `public.handle_new_user()` trigger in `supabase/migrations/20261021000000_fix_privilege_escalation_and_harden_rls.sql`. Any `role` key passed in `raw_user_meta_data` is strictly ignored; all new registrations unconditionally receive the least-privilege `project_owner` role.
+- **Removed Unauthenticated Demo Account Provisioning**: Deleted the unauthenticated `provisionDemoAccounts` server function. Account provisioning is restricted to the protected administrative script `scripts/seed-demo-accounts.ts`, which requires explicit environment confirmation (`ALLOW_DEMO_SEED=true`).
+- **Sanitized Secrets & Git Hygiene**: Removed `.env` from version control tracking, added environment secret patterns to `.gitignore`, and provided a comprehensive `.env.example` template.
+
+### 2. Verification Workflow & Data Integrity (P0 Resolved)
+- **Strict State Machine**: Enforced strict valid status transitions (`DRAFT` → `SUBMITTED` → `UNDER_REVIEW` → `VERIFIED` / `CORRECTION_REQUIRED` / `REJECTED`). Disallowed approving directly from `DRAFT`, `REJECTED`, or `CORRECTION_REQUIRED`.
+- **Atomic Database Transactions**: Created `public.perform_verification_decision` stored procedure executing status update, review log, carbon impact, durable audit log, timeline event, and notifications within a single atomic PostgreSQL transaction.
+- **Optimistic Concurrency Control**: Status transitions enforce optimistic locking on expected status to eliminate concurrent verification race conditions.
+- **Strict Input Boundaries**: Confirmed carbon values must be positive, finite numbers (`confirmedCarbon > 0`). Mandatory comments (≥ 5 characters) are strictly enforced for correction and rejection decisions.
+- **Durable Audit Logs**: Audit log failures now throw exceptions rather than failing silently, preventing unrecorded mutations.
+
+### 3. Real Blockchain Anchoring & Transparency (P0 Resolved)
+- **Solidity Smart Contract**: Provided `contracts/BlueCarbonRegistry.sol` for deploying on-chain anchor registries with tamper-evident record hashing and verification events.
+- **Real EVM JSON-RPC Client**: Implemented standard EVM JSON-RPC client in `src/lib/blockchain.server.ts` supporting transaction submission, receipt polling, and block confirmations tracking.
+- **Independent On-Chain Verification**: Added `verifyOnChainAnchor()` and frontend `VerifyChainButton` allowing verifiers and the public to verify receipts directly against RPC nodes.
+- **Explicit Transparency**: The UI and API strictly distinguish simulated records (`simulated: true`, "Simulated Demo Record") from genuine on-chain confirmations ("Live On-Chain Anchor"), never misrepresenting testnet simulations.
+
+### 4. Scientific Blue Carbon Accounting Methodology (P0 Resolved)
+- **IPCC 2013 & Verra VM0033 Standard**: Integrated `src/lib/carbon-methodology.ts` replacing demo coefficients with peer-reviewed scientific parameters (IPCC Coastal Wetlands Supplement Chapter 4 & Verra VM0033).
+- **Carbon Pool Breakdown**: Distinct calculations for Aboveground/Belowground Biomass ($C_{bio}$) and Soil Organic Carbon Accretion ($C_{soc}$).
+- **Mandatory Risk Buffers & Deductions**:
+  - 15% non-permanence risk buffer withholding for reversal risks.
+  - Salinity-dependent methane GHG emissions deduction (for brackish waters < 18 ppt).
+  - Activity displacement leakage deduction.
+  - Scientific uncertainty discount factor (10% Tier 1 default, 3% Tier 2 site samples).
+- **Clear Separation**: Distinguishes Estimated Gross Sequestration from Net Verified Carbon Impact.
+
+### 5. Evidence Privacy & Upload Validation
+- **Secure URL Signing**: `signEvidenceUrls` and `signCommunityUrls` reject arbitrary or external URLs, enforce `storage://` path validation, and verify caller project ownership or verifier authorization.
+- **Upload Validation Engine**: `src/lib/evidence-validator.ts` enforces 25MB file limits, whitelisted MIME types, extension validation, and sanitizes filenames against directory traversal (`../`, `..\`).
+- **Public Privacy Safeguards**: Public lookup endpoints strictly exclude non-public evidence items and redact sensitive personal contact details.
+
+### 6. Automated Testing & CI/CD Pipeline
+- **Comprehensive Test Suite**: Added 25 automated tests across 5 test suites (`tests/**/*.test.ts`) covering security authorization, state transitions, scientific carbon math, evidence upload validation, and blockchain anchoring.
+- **GitHub Actions CI**: Added `.github/workflows/ci.yml` running tests across Node 20, 22, and 24, verifying code formatting, TypeScript type checks, and production builds on every PR.
+

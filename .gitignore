@@ -20,6 +20,18 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Environment files
+.env
+.env*.local
+.env.production
+.env.staging
+.env.test
+!.env.example
+
+# Test & Coverage
+coverage/
+*.lcov
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

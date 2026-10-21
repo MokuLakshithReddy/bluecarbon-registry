@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { MapPanel } from "@/components/MapPanel";
 import { EvidenceGallery } from "@/components/EvidenceGallery";
+import { CarbonMethodologyPanel } from "@/components/AssessmentPanels";
 import { CarbonDisclaimer } from "@/components/CarbonDisclaimer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,6 +136,14 @@ function ReviewPage() {
             />
           ) : null}
 
+          <CarbonMethodologyPanel
+            ecosystem={project.ecosystem as Ecosystem}
+            areaHectares={Number(project.area_hectares ?? 0)}
+            restorationStart={project.restoration_start}
+            restorationEnd={project.restoration_end}
+            survivalRate={project.survival_rate}
+          />
+
           <EvidenceGallery items={data?.evidence ?? []} />
         </div>
 
@@ -154,10 +163,80 @@ function ReviewPage() {
                   <Textarea id="comments" rows={4} value={comments} onChange={(e) => setComments(e.target.value)} />
                 </div>
                 <div className="grid gap-2">
-                  <Button variant="outline" disabled={busy} onClick={() => void run(() => start({ data: payload }), "Review started.")}>Start review</Button>
-                  <Button disabled={busy} onClick={() => void run(() => approve({ data: { ...payload, confirmedCarbon: Number(confirmed) || null } }), "Project verified and recorded.")}>Approve &amp; record</Button>
-                  <Button variant="outline" disabled={busy} onClick={() => void run(() => correct({ data: payload }), "Correction requested.")}>Request correction</Button>
-                  <Button variant="destructive" disabled={busy} onClick={() => void run(() => reject({ data: payload }), "Project rejected.")}>Reject</Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy || project.status !== "SUBMITTED"}
+                    onClick={() => void run(() => start({ data: { projectId: project.id } }), "Review started.")}
+                  >
+                    Start review
+                  </Button>
+                  <Button
+                    disabled={busy || project.status !== "UNDER_REVIEW"}
+                    onClick={() => {
+                      const carbonVal = Number(confirmed) || Number(project.estimated_carbon);
+                      if (!carbonVal || carbonVal <= 0) {
+                        toast.error("Please enter a valid positive confirmed carbon value.");
+                        return;
+                      }
+                      void run(
+                        () =>
+                          approve({
+                            data: {
+                              projectId: project.id,
+                              confirmedCarbon: carbonVal,
+                              comments: comments.trim() || null,
+                            },
+                          }),
+                        "Project verified and anchored.",
+                      );
+                    }}
+                  >
+                    Approve &amp; record
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy || project.status !== "UNDER_REVIEW"}
+                    onClick={() => {
+                      if (!comments.trim() || comments.trim().length < 5) {
+                        toast.error("Verifier comments (minimum 5 characters) are required to request correction.");
+                        return;
+                      }
+                      void run(
+                        () =>
+                          correct({
+                            data: {
+                              projectId: project.id,
+                              comments: comments.trim(),
+                            },
+                          }),
+                        "Correction requested.",
+                      );
+                    }}
+                  >
+                    Request correction
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={busy || (project.status !== "UNDER_REVIEW" && project.status !== "SUBMITTED")}
+                    onClick={() => {
+                      if (!comments.trim() || comments.trim().length < 5) {
+                        toast.error("Verifier comments (minimum 5 characters) are required to reject a project.");
+                        return;
+                      }
+                      void run(
+                        () =>
+                          reject({
+                            data: {
+                              projectId: project.id,
+                              comments: comments.trim(),
+                            },
+                          }),
+                        "Project rejected.",
+                      );
+                    }}
+                  >
+                    Reject
+                  </Button>
                 </div>
               </>
             )}

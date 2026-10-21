@@ -1,6 +1,8 @@
-import { AlertTriangle, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ShieldCheck, XCircle, Leaf, BookOpen } from "lucide-react";
 import type { ValidationResult } from "@/lib/validation-engine";
 import type { ScreeningResult } from "@/lib/ai-screening";
+import { calculateScientificCarbon, type DetailedCarbonAssessment } from "@/lib/carbon-methodology";
+import type { Ecosystem } from "@/lib/domain";
 import { RiskBadge, ScorePill } from "./StatusBadge";
 
 export function ValidationPanel({ result }: { result: ValidationResult }) {
@@ -73,6 +75,83 @@ export function RiskPanel({ result }: { result: ScreeningResult }) {
         <p>
           {result.summary} Screening is rule-based and deterministic — it assists but never replaces the
           human/NCCR verification decision.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function CarbonMethodologyPanel({
+  ecosystem,
+  areaHectares,
+  restorationStart,
+  restorationEnd,
+  survivalRate,
+}: {
+  ecosystem: Ecosystem;
+  areaHectares: number;
+  restorationStart?: string | null;
+  restorationEnd?: string | null;
+  survivalRate?: number | null;
+}) {
+  const assessment: DetailedCarbonAssessment = calculateScientificCarbon({
+    ecosystem,
+    areaHectares,
+    restorationStartDate: restorationStart,
+    restorationEndDate: restorationEnd,
+    survivalRate,
+  });
+
+  return (
+    <div className="panel p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Scientific Accounting
+          </p>
+          <h3 className="mt-1 font-display text-lg font-semibold flex items-center gap-2">
+            <Leaf className="size-4 text-emerald-500" />
+            IPCC Wetlands / VM0033 Accounting
+          </h3>
+        </div>
+        <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+          {assessment.tier}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 text-xs">
+        <div className="rounded-lg bg-secondary/50 p-3 space-y-1">
+          <p className="font-semibold text-foreground">Gross Sequestration</p>
+          <p className="text-muted-foreground">
+            Biomass: {assessment.biomassSequestrationTco2e.toLocaleString()} tCO₂e
+          </p>
+          <p className="text-muted-foreground">
+            Soil Accumulation: {assessment.soilCarbonAccretionTco2e.toLocaleString()} tCO₂e
+          </p>
+          <p className="font-semibold text-emerald-600 dark:text-emerald-400 pt-1">
+            Total Gross: {assessment.grossSequestrationTco2e.toLocaleString()} tCO₂e
+          </p>
+        </div>
+
+        <div className="rounded-lg bg-secondary/50 p-3 space-y-1">
+          <p className="font-semibold text-foreground">Mandatory Deductions &amp; Buffer</p>
+          <p className="text-muted-foreground">
+            Non-Permanence Buffer (15%): -{assessment.riskBufferDeductionTco2e.toLocaleString()} tCO₂e
+          </p>
+          <p className="text-muted-foreground">
+            Uncertainty Discount: -{assessment.uncertaintyDiscountTco2e.toLocaleString()} tCO₂e
+          </p>
+          <p className="font-semibold text-primary pt-1">
+            Net Verified Impact: {assessment.netVerifiedTco2e.toLocaleString()} tCO₂e
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-start gap-2 rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
+        <BookOpen className="mt-0.5 size-4 shrink-0 text-primary" />
+        <p>
+          <span className="font-semibold text-foreground">Scientific Reference: </span>
+          {assessment.citation}. Calculated over {assessment.durationYears} year(s) with {assessment.survivalRatePercent}% survival factor.
         </p>
       </div>
     </div>

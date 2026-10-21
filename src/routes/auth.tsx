@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Loader2, ShieldCheck, Waves } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { provisionDemoAccounts } from "@/lib/registry.functions";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +33,6 @@ const DEMO_PASSWORD = "bluecarbon123";
 function AuthPage() {
   const navigate = useNavigate();
   const { session, isVerifier, loading } = useAuth();
-  const provision = useServerFn(provisionDemoAccounts);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,11 +49,14 @@ function AuthPage() {
   const demoLogin = async (email: string) => {
     setBusy(email);
     try {
-      await provision({});
       await signIn(email, DEMO_PASSWORD);
       toast.success(`Signed in as ${email}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Demo sign-in failed");
+      toast.error(
+        error instanceof Error
+          ? `${error.message}. (Ensure demo accounts are seeded via admin script)`
+          : "Demo sign-in failed",
+      );
     } finally {
       setBusy(null);
     }
@@ -222,7 +222,6 @@ function SignUpForm() {
     full_name: "",
     organization: "",
     phone: "",
-    role: "project_owner",
   });
   const [busy, setBusy] = useState(false);
   const update = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -243,7 +242,6 @@ function SignUpForm() {
                 full_name: form.full_name,
                 organization: form.organization,
                 phone: form.phone,
-                role: form.role,
               },
             },
           });

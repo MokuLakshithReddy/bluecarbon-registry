@@ -2,7 +2,7 @@
  * Automated validation engine (deterministic, rule based).
  * Produces an "Evidence Quality Score" out of 100 plus per-check results.
  */
-import type { EvidenceRow, ProjectRow } from "./domain";
+import type { EvidenceRow, ProjectRow } from "./domain.ts";
 
 export type CheckState = "PASS" | "WARN" | "FAIL";
 
