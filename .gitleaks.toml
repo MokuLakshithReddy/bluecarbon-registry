@@ -17,10 +17,9 @@ regexes = [
   '''0x3333333333333333333333333333333333333333333333333333333333333333''',
   '''0x9999999999999999999999999999999999999999999999999999999999999999''',
   '''0x437ed705ea2c9ae29f9e8bcf1a64658661c930cb6ef90e3f970957be7e4a1679''',
+  '''0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d''',
+  '''ghp_canaryToken1234567890123456789012345''',
 ]
 paths = [
   '''\.example$''',
-  '''scripts/security-audit\.ts''',
-  '''src/lib/observability\.ts''',
-  '''tests/security/secret-audit-canary\.test\.ts''',
 ]

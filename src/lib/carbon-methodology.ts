@@ -105,6 +105,7 @@ export interface CarbonCalculationInput {
   salinityPpt?: number | null | undefined; // Salinity in parts per thousand (threshold 18 ppt for CH4)
   hasLeakageDisplacement?: boolean | undefined;
   tier?: "TIER_1_DEFAULTS" | "TIER_2_SITE_CALIBRATED" | "TIER_3_SOIL_CORES" | undefined;
+  tierSupportingEvidence?: string[] | undefined; // Supporting evidence URIs/hashes required for Tier 2/3
 }
 
 /**
@@ -253,10 +254,26 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
     (grossSequestration - ghgEmissions - leakageTco2e) * nonPermanenceBufferRate;
 
   // 6. Scientific Uncertainty Discount Factor
-  // Tier 1 defaults carry a 10% conservative discount; Tier 2 site samples carry 3%; Tier 3 soil cores carry 3%.
-  const tier = input.tier ?? "TIER_1_DEFAULTS";
+  // Tier 1 defaults carry a 10% conservative discount.
+  // Tier 2 site samples carry 3% discount ONLY if supporting site-sampling evidence is substantiated.
+  // Tier 3 soil cores carry 1% discount ONLY if at least 2 independent soil core / lab evidence items are provided.
+  let effectiveTier = input.tier ?? "TIER_1_DEFAULTS";
+  const evidenceCount = input.tierSupportingEvidence?.length ?? 0;
+
+  if (effectiveTier === "TIER_2_SITE_CALIBRATED" && evidenceCount < 1) {
+    effectiveTier = "TIER_1_DEFAULTS";
+    defaultInputsApplied.push("tier_downgraded_to_tier_1_missing_tier_2_sampling_evidence");
+  } else if (effectiveTier === "TIER_3_SOIL_CORES" && evidenceCount < 2) {
+    effectiveTier = "TIER_1_DEFAULTS";
+    defaultInputsApplied.push("tier_downgraded_to_tier_1_missing_tier_3_soil_core_evidence");
+  }
+
   const uncertaintyRate =
-    tier === "TIER_2_SITE_CALIBRATED" || tier === "TIER_3_SOIL_CORES" ? 0.03 : 0.1;
+    effectiveTier === "TIER_3_SOIL_CORES"
+      ? 0.01
+      : effectiveTier === "TIER_2_SITE_CALIBRATED"
+        ? 0.03
+        : 0.1;
   const uncertaintyTco2e =
     (grossSequestration - ghgEmissions - leakageTco2e - riskBufferTco2e) * uncertaintyRate;
 
@@ -270,9 +287,9 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
     methodologyId: METHODOLOGY_SPEC.id,
     methodologyTitle: METHODOLOGY_SPEC.title,
     tier:
-      tier === "TIER_3_SOIL_CORES"
+      effectiveTier === "TIER_3_SOIL_CORES"
         ? "Tier 3 (Site-Specific Soil Cores & Allometry)"
-        : tier === "TIER_2_SITE_CALIBRATED"
+        : effectiveTier === "TIER_2_SITE_CALIBRATED"
           ? "Tier 2 (Site-Calibrated)"
           : "Tier 1 (IPCC Default Factors)",
     units: METHODOLOGY_SPEC.standardUnits,

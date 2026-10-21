@@ -92,10 +92,40 @@ test("Carbon Methodology: Tier 2 site sampling reduces scientific uncertainty di
     restorationStartDate: "2024-01-01",
     restorationEndDate: "2025-01-01",
     tier: "TIER_2_SITE_CALIBRATED",
+    tierSupportingEvidence: ["storage://evidence/p1/biomass-sample-lab-results.pdf"],
   });
 
   assert.ok(tier2.uncertaintyDiscountTco2e < tier1.uncertaintyDiscountTco2e);
   assert.ok(tier2.netVerifiedTco2e >= tier1.netVerifiedTco2e);
+});
+
+test("Carbon Methodology: Enforces Tier 2/3 evidence requirements and downgrades to Tier 1 if missing", () => {
+  // Tier 2 requested without evidence must downgrade to Tier 1
+  const missingTier2 = calculateScientificCarbon({
+    ecosystem: "MANGROVE",
+    areaHectares: 10,
+    tier: "TIER_2_SITE_CALIBRATED",
+  });
+  assert.strictEqual(missingTier2.tier, "Tier 1 (IPCC Default Factors)");
+  assert.ok(
+    missingTier2.defaultInputsApplied.includes(
+      "tier_downgraded_to_tier_1_missing_tier_2_sampling_evidence",
+    ),
+  );
+
+  // Tier 3 requested with only 1 evidence item (requires >= 2: soil cores + allometry) must downgrade to Tier 1
+  const insufficientTier3 = calculateScientificCarbon({
+    ecosystem: "MANGROVE",
+    areaHectares: 10,
+    tier: "TIER_3_SOIL_CORES",
+    tierSupportingEvidence: ["storage://evidence/p1/only-one-file.pdf"],
+  });
+  assert.strictEqual(insufficientTier3.tier, "Tier 1 (IPCC Default Factors)");
+  assert.ok(
+    insufficientTier3.defaultInputsApplied.includes(
+      "tier_downgraded_to_tier_1_missing_tier_3_soil_core_evidence",
+    ),
+  );
 });
 
 test("Carbon Methodology: Reference benchmarks (Sundarbans, Pichavaram, Chilika) validate against published ranges", () => {
@@ -130,6 +160,10 @@ test("Carbon Methodology: Tier 3 produces accurate human-readable label and disc
     ecosystem: "MANGROVE",
     areaHectares: 15,
     tier: "TIER_3_SOIL_CORES",
+    tierSupportingEvidence: [
+      "storage://evidence/p1/soil-cores-depth-analysis.pdf",
+      "storage://evidence/p1/destructive-allometric-harvest-data.csv",
+    ],
   });
   assert.strictEqual(result.tier, "Tier 3 (Site-Specific Soil Cores & Allometry)");
   assert.ok(result.uncertaintyDiscountTco2e > 0);

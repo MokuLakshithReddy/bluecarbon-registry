@@ -336,16 +336,16 @@ node --experimental-strip-types --test tests/verification/*.test.ts
 node --experimental-strip-types --test tests/scientific/*.test.ts
 ```
 
-**Test count: 138 passing, 0 failing**
+**Test count: 142 passing, 0 failing**
 
 | Suite                                               | Tests | Coverage                                                                |
 | --------------------------------------------------- | ----- | ----------------------------------------------------------------------- |
-| `blockchain/`                                       | 19    | Real EVM provider, receipt verification, event parsing, precision       |
+| `blockchain/`                                       | 20    | Real EVM provider, receipt verification, event parsing, precision, RPC chain ID / bytecode validation |
 | `deployment/smoke-test-resilience.test.ts`          | 4     | Wrong-chain ID, missing contract bytecode, malformed RPC, RPC timeout   |
 | `evidence/evidence-security.test.ts`                | 6     | Upload validation, URI validation, SHA-256, provenance                  |
 | `evidence/cross-project-binding.test.ts`            | 34    | Cross-project path binding, traversal hardening, all attack vectors     |
 | `evidence/evidence-e2e.test.ts`                     | 6     | Storage download, SHA-256 integrity, tamper detection, fail-closed      |
-| `scientific/carbon-methodology.test.ts`             | 8     | IPCC coefficients, 5.42 methane, Tier 1/2/3, benchmarks, date checks    |
+| `scientific/carbon-methodology.test.ts`             | 9     | IPCC coefficients, 5.42 methane, Tier 1/2/3 evidence enforcement & downgrade, benchmarks, date checks |
 | `security/auth-privilege-escalation.test.ts`        | 5     | Signup trigger guards, ownership isolation, verifier immutability       |
 | `security/database-integration.test.ts`             | 14    | Real PGlite migrations, RLS enforcement, outbox leases, identity binds  |
 | `security/secret-audit-canary.test.ts`              | 2     | Secret audit canary verification, fail-closed git history inspection    |

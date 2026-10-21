@@ -163,12 +163,16 @@ export interface EvmConfig {
   network: string;
   explorerUrl?: string | undefined;
   confirmationsRequired: number;
+  expectedChainId?: number | undefined;
 }
 
 export function readEvmConfig(): EvmConfig | null {
   const rpcUrl = process.env["BLOCKCHAIN_RPC_URL"];
   const contract = process.env["BLOCKCHAIN_CONTRACT_ADDRESS"];
   if (!rpcUrl || !contract) return null;
+
+  const rawChainId = process.env["BLOCKCHAIN_CHAIN_ID"];
+  const expectedChainId = rawChainId ? Number(rawChainId) : undefined;
 
   return {
     rpcUrl,
@@ -177,15 +181,18 @@ export function readEvmConfig(): EvmConfig | null {
     network: process.env["BLOCKCHAIN_NETWORK"] ?? "Polygon Amoy Testnet",
     explorerUrl: process.env["BLOCKCHAIN_EXPLORER_URL"] ?? "https://amoy.polygonscan.com",
     confirmationsRequired: Number(process.env["BLOCKCHAIN_CONFIRMATIONS_REQUIRED"] ?? 2),
+    expectedChainId,
   };
 }
 
 function getJsonRpcProvider(cfg: EvmConfig): ethers.JsonRpcProvider {
-  const chainId = cfg.network.toLowerCase().includes("amoy")
-    ? 80002
-    : cfg.network.toLowerCase().includes("sepolia")
-      ? 11155111
-      : 137;
+  const chainId =
+    cfg.expectedChainId ??
+    (cfg.network.toLowerCase().includes("amoy")
+      ? 80002
+      : cfg.network.toLowerCase().includes("sepolia")
+        ? 11155111
+        : 137);
   const net = new ethers.Network(cfg.network, chainId);
   return new ethers.JsonRpcProvider(cfg.rpcUrl, net, { staticNetwork: net });
 }
@@ -211,6 +218,48 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
 
       try {
         const provider = getJsonRpcProvider(cfg);
+
+        // 1. Query live eth_chainId from endpoint and compare with expectedChainId
+        const hexChainId = (await provider.send("eth_chainId", [])) as string;
+        const liveChainId = parseInt(hexChainId, 16);
+        if (cfg.expectedChainId && liveChainId !== cfg.expectedChainId) {
+          return {
+            tx_hash: "",
+            block_number: null,
+            network: cfg.network,
+            status: "FAILED",
+            simulated: false,
+            explorer_url: null,
+            error: `Chain ID mismatch: connected RPC reported ${liveChainId}, expected ${cfg.expectedChainId}.`,
+          };
+        }
+
+        // 2. Validate contract address format and deployed bytecode presence
+        if (!ethers.isAddress(cfg.contract)) {
+          return {
+            tx_hash: "",
+            block_number: null,
+            network: cfg.network,
+            status: "FAILED",
+            simulated: false,
+            explorer_url: null,
+            error: `Invalid contract address format: ${cfg.contract}.`,
+          };
+        }
+
+        const deployedCode = await provider.getCode(cfg.contract);
+        if (!deployedCode || deployedCode === "0x") {
+          return {
+            tx_hash: "",
+            block_number: null,
+            network: cfg.network,
+            status: "FAILED",
+            simulated: false,
+            explorer_url: null,
+            error: `No contract bytecode deployed at address ${cfg.contract}.`,
+          };
+        }
+
         const wallet = new ethers.Wallet(cfg.privateKey, provider);
         const contract = new ethers.Contract(cfg.contract, BLUE_CARBON_REGISTRY_ABI, wallet);
 
@@ -323,59 +372,90 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
         };
 
         // Handle transaction replacement (repriced, sped up, cancelled/replaced)
-        if (anyErr?.code === "TRANSACTION_REPLACED" && anyErr.receipt?.status === 1) {
-          const repHash = anyErr.replacement?.hash || anyErr.receipt.hash || "";
-          const repReceipt = anyErr.receipt;
-          let repEventFound = false;
+        if (anyErr?.code === "TRANSACTION_REPLACED") {
+          const repHash = anyErr.replacement?.hash || anyErr.receipt?.hash || "";
 
-          if (repReceipt.logs && Array.isArray(repReceipt.logs)) {
-            const iface = new ethers.Interface(BLUE_CARBON_REGISTRY_ABI);
-            const targetHash = (
-              recordHash.startsWith("0x") ? recordHash : `0x${recordHash}`
-            ).toLowerCase();
-            for (const log of repReceipt.logs) {
-              if (log.address?.toLowerCase() === cfg.contract.toLowerCase()) {
-                try {
-                  const parsed = iface.parseLog({
-                    topics: log.topics,
-                    data: log.data,
-                  });
-                  if (
-                    parsed?.name === "RecordAnchored" &&
-                    String(parsed.args["recordHash"] ?? "").toLowerCase() === targetHash
-                  ) {
-                    repEventFound = true;
-                    break;
+          // Explicitly detect cancelled transactions
+          if ((anyErr as { cancelled?: boolean }).cancelled) {
+            return {
+              tx_hash: repHash,
+              block_number: anyErr.receipt?.blockNumber ?? null,
+              network: cfg.network,
+              status: "FAILED",
+              simulated: false,
+              explorer_url: null,
+              error:
+                "Transaction was explicitly cancelled or replaced by a non-anchoring transaction.",
+            };
+          }
+
+          // Explicitly detect reverted replacement transactions
+          if (anyErr.receipt?.status === 0) {
+            return {
+              tx_hash: repHash,
+              block_number: anyErr.receipt?.blockNumber ?? null,
+              network: cfg.network,
+              status: "FAILED",
+              simulated: false,
+              explorer_url: null,
+              error: "Replacement transaction reverted on-chain during execution.",
+            };
+          }
+
+          if (anyErr.receipt?.status === 1) {
+            const repReceipt = anyErr.receipt;
+            let repEventFound = false;
+
+            if (repReceipt.logs && Array.isArray(repReceipt.logs)) {
+              const iface = new ethers.Interface(BLUE_CARBON_REGISTRY_ABI);
+              const targetHash = (
+                recordHash.startsWith("0x") ? recordHash : `0x${recordHash}`
+              ).toLowerCase();
+              for (const log of repReceipt.logs) {
+                if (log.address?.toLowerCase() === cfg.contract.toLowerCase()) {
+                  try {
+                    const parsed = iface.parseLog({
+                      topics: log.topics,
+                      data: log.data,
+                    });
+                    if (
+                      parsed?.name === "RecordAnchored" &&
+                      String(parsed.args["recordHash"] ?? "").toLowerCase() === targetHash
+                    ) {
+                      repEventFound = true;
+                      break;
+                    }
+                  } catch {
+                    // Not our event
                   }
-                } catch {
-                  // Not our event
                 }
               }
             }
-          }
 
-          if (repEventFound) {
+            if (repEventFound) {
+              return {
+                tx_hash: repHash,
+                block_number: anyErr.receipt.blockNumber ?? null,
+                network: cfg.network,
+                status: "CONFIRMED",
+                simulated: false,
+                explorer_url:
+                  cfg.explorerUrl && repHash ? `${cfg.explorerUrl}/tx/${repHash}` : null,
+                confirmations: cfg.confirmationsRequired,
+              };
+            }
+
             return {
               tx_hash: repHash,
               block_number: anyErr.receipt.blockNumber ?? null,
               network: cfg.network,
-              status: "CONFIRMED",
+              status: "FAILED",
               simulated: false,
-              explorer_url: cfg.explorerUrl && repHash ? `${cfg.explorerUrl}/tx/${repHash}` : null,
-              confirmations: cfg.confirmationsRequired,
+              explorer_url: null,
+              error:
+                "Transaction was replaced by another transaction that did not anchor this record.",
             };
           }
-
-          return {
-            tx_hash: repHash,
-            block_number: anyErr.receipt.blockNumber ?? null,
-            network: cfg.network,
-            status: "FAILED",
-            simulated: false,
-            explorer_url: null,
-            error:
-              "Transaction was replaced by another transaction that did not anchor this record.",
-          };
         }
 
         const errMsg = anyErr?.message || String(err);
@@ -443,6 +523,44 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
     async verify(txHash, recordHash, expectedPayload) {
       try {
         const provider = getJsonRpcProvider(cfg);
+
+        // 1. Live chain ID check
+        if (cfg.expectedChainId) {
+          const hexChainId = (await provider.send("eth_chainId", [])) as string;
+          const liveChainId = parseInt(hexChainId, 16);
+          if (liveChainId !== cfg.expectedChainId) {
+            return {
+              isVerified: false,
+              txHash,
+              recordHash,
+              blockNumber: null,
+              confirmations: 0,
+              network: cfg.network,
+              simulated: false,
+              receiptStatus: "NOT_FOUND",
+              verifiedAt: new Date().toISOString(),
+              error: `Chain ID mismatch on verification: connected RPC reported ${liveChainId}, expected ${cfg.expectedChainId}.`,
+            };
+          }
+        }
+
+        // 2. Deployed contract bytecode check
+        const deployedCode = await provider.getCode(cfg.contract);
+        if (!deployedCode || deployedCode === "0x") {
+          return {
+            isVerified: false,
+            txHash,
+            recordHash,
+            blockNumber: null,
+            confirmations: 0,
+            network: cfg.network,
+            simulated: false,
+            receiptStatus: "NOT_FOUND",
+            verifiedAt: new Date().toISOString(),
+            error: `Contract bytecode missing at address ${cfg.contract}.`,
+          };
+        }
+
         const receipt = await provider.getTransactionReceipt(txHash);
 
         if (!receipt) {
