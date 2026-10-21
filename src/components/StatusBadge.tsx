@@ -53,7 +53,12 @@ export function ScorePill({ score }: { score: number }) {
         ? "bg-warning/20 text-warning-foreground border-warning/50"
         : "bg-destructive/10 text-destructive border-destructive/30";
   return (
-    <span className={cn("inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold", tone)}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold",
+        tone,
+      )}
+    >
       {score} / 100
     </span>
   );

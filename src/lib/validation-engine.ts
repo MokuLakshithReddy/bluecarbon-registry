@@ -23,16 +23,14 @@ type ProjectInput = Partial<ProjectRow>;
 
 export function runValidation(
   project: ProjectInput,
-  evidence: Pick<EvidenceRow, "file_hash" | "file_name" | "latitude" | "longitude" | "capture_date">[] = [],
+  evidence: Pick<
+    EvidenceRow,
+    "file_hash" | "file_name" | "latitude" | "longitude" | "capture_date"
+  >[] = [],
 ): ValidationResult {
   const checks: ValidationCheck[] = [];
-  const add = (
-    key: string,
-    label: string,
-    state: CheckState,
-    detail: string,
-    weight = 10,
-  ) => checks.push({ key, label, state, detail, weight });
+  const add = (key: string, label: string, state: CheckState, detail: string, weight = 10) =>
+    checks.push({ key, label, state, detail, weight });
 
   // 1. Required fields
   const required: [string, unknown][] = [
@@ -49,7 +47,9 @@ export function runValidation(
     "required",
     "Required Data",
     missing.length === 0 ? "PASS" : missing.length <= 2 ? "WARN" : "FAIL",
-    missing.length === 0 ? "All mandatory registration fields are present." : `Missing: ${missing.join(", ")}.`,
+    missing.length === 0
+      ? "All mandatory registration fields are present."
+      : `Missing: ${missing.join(", ")}.`,
     18,
   );
 
@@ -57,7 +57,11 @@ export function runValidation(
   const lat = project.latitude;
   const lng = project.longitude;
   const coordsValid =
-    lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+    lat != null &&
+    lng != null &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180 &&
+    !(lat === 0 && lng === 0);
   const inIndiaBox = coordsValid && lat! >= 5 && lat! <= 25 && lng! >= 67 && lng! <= 95;
   add(
     "gps",
@@ -157,15 +161,19 @@ export function runValidation(
   const issues: string[] = [];
   if (area > 100000) issues.push("project area is implausibly large");
   if (area > 0 && area < 0.1) issues.push("project area is implausibly small");
-  if (density > 20000) issues.push(`planting density (${Math.round(density)}/ha) is unusually high`);
-  if (survival != null && (survival < 0 || survival > 100)) issues.push("survival rate is out of range");
+  if (density > 20000)
+    issues.push(`planting density (${Math.round(density)}/ha) is unusually high`);
+  if (survival != null && (survival < 0 || survival > 100))
+    issues.push("survival rate is out of range");
   if (area > 0 && carbon > 0 && carbon / area > 500)
     issues.push("carbon impact per hectare exceeds the demonstration plausibility band");
   add(
     "plausibility",
     "Value Plausibility",
     issues.length === 0 ? "PASS" : issues.length > 1 ? "FAIL" : "WARN",
-    issues.length === 0 ? "Reported numerical values are within plausible ranges." : capitalize(issues.join("; ")) + ".",
+    issues.length === 0
+      ? "Reported numerical values are within plausible ranges."
+      : capitalize(issues.join("; ")) + ".",
     6,
   );
 

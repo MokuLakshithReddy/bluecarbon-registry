@@ -8,7 +8,11 @@ export const Route = createFileRoute("/_authenticated/audit-logs")({
   head: () => ({
     meta: [
       { title: "Audit Logs · BlueCarbon MRV Registry" },
-      { name: "description", content: "Chronological audit trail of every registry action: submissions, reviews, verification decisions and immutable record writes." },
+      {
+        name: "description",
+        content:
+          "Chronological audit trail of every registry action: submissions, reviews, verification decisions and immutable record writes.",
+      },
       { property: "og:title", content: "Audit Logs · BlueCarbon MRV Registry" },
       { property: "og:description", content: "Chronological registry audit trail." },
       { property: "og:type", content: "website" },
@@ -33,7 +37,10 @@ function AuditLogsPage() {
   });
 
   return (
-    <AppShell title="Audit logs" description="Append-only record of registry actions, retained for accountability.">
+    <AppShell
+      title="Audit logs"
+      description="Append-only record of registry actions, retained for accountability."
+    >
       <div className="panel overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm">
           <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-muted-foreground">
@@ -47,7 +54,11 @@ function AuditLogsPage() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td className="px-4 py-6 text-muted-foreground" colSpan={5}>Loading audit trail…</td></tr>
+              <tr>
+                <td className="px-4 py-6 text-muted-foreground" colSpan={5}>
+                  Loading audit trail…
+                </td>
+              </tr>
             ) : null}
             {logs.map((log) => (
               <tr key={log.id} className="border-b border-border/60 last:border-0">
@@ -55,13 +66,19 @@ function AuditLogsPage() {
                 <td className="px-4 py-3 font-medium">{log.action}</td>
                 <td className="px-4 py-3 font-mono text-xs">{log.project_code ?? "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  {log.previous_status ? `${log.previous_status} → ${log.new_status ?? "—"}` : (log.new_status ?? "—")}
+                  {log.previous_status
+                    ? `${log.previous_status} → ${log.new_status ?? "—"}`
+                    : (log.new_status ?? "—")}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{log.actor_email ?? "system"}</td>
               </tr>
             ))}
             {!isLoading && logs.length === 0 ? (
-              <tr><td className="px-4 py-6 text-muted-foreground" colSpan={5}>No audit entries recorded yet.</td></tr>
+              <tr>
+                <td className="px-4 py-6 text-muted-foreground" colSpan={5}>
+                  No audit entries recorded yet.
+                </td>
+              </tr>
             ) : null}
           </tbody>
         </table>

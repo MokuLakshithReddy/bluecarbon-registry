@@ -15,7 +15,8 @@ export const Route = createFileRoute("/about")({
       { property: "og:title", content: "About the Registry · BlueCarbon MRV Registry" },
       {
         property: "og:description",
-        content: "Purpose, governance roles, limitations and roadmap of the blue-carbon MRV demonstration.",
+        content:
+          "Purpose, governance roles, limitations and roadmap of the blue-carbon MRV demonstration.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -36,15 +37,15 @@ function AboutPage() {
 
         <div className="panel mt-8 space-y-4 p-6 text-sm text-muted-foreground">
           <p>
-            India's mangroves, seagrass meadows and coastal wetlands store disproportionate amounts of carbon,
-            but restoration outcomes are hard to trust without consistent measurement, reporting and
-            verification. This registry provides a single, auditable path from field evidence to a publicly
-            provable verified record.
+            India's mangroves, seagrass meadows and coastal wetlands store disproportionate amounts
+            of carbon, but restoration outcomes are hard to trust without consistent measurement,
+            reporting and verification. This registry provides a single, auditable path from field
+            evidence to a publicly provable verified record.
           </p>
           <p>
-            Project owners — NGOs, panchayats, forest departments, community groups and research institutes —
-            register sites and submit evidence. NCCR verifiers assess that evidence and record decisions.
-            Members of the public verify outcomes without an account.
+            Project owners — NGOs, panchayats, forest departments, community groups and research
+            institutes — register sites and submit evidence. NCCR verifiers assess that evidence and
+            record decisions. Members of the public verify outcomes without an account.
           </p>
         </div>
 
@@ -73,9 +74,17 @@ function AboutPage() {
         <div className="panel mt-6 p-6">
           <h2 className="font-display text-lg font-semibold">Limitations of this demonstration</h2>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-            <li>· Carbon figures use published demonstration coefficients, not accredited methodologies.</li>
-            <li>· Blockchain anchoring runs against a simulated testnet provider in this prototype.</li>
-            <li>· Project and evidence records shown are demonstration data, not official government records.</li>
+            <li>
+              · Carbon figures use published demonstration coefficients, not accredited
+              methodologies.
+            </li>
+            <li>
+              · Blockchain anchoring runs against a simulated testnet provider in this prototype.
+            </li>
+            <li>
+              · Project and evidence records shown are demonstration data, not official government
+              records.
+            </li>
             <li>· No carbon credits are issued, traded or retired by this system.</li>
           </ul>
         </div>

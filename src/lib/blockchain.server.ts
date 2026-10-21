@@ -5,14 +5,17 @@
  *
  * The registry never writes raw files, media, or private PII on-chain.
  * It builds a canonical verified-project record, computes a SHA-256 digest,
- * and anchors the cryptographic hash to an immutable EVM-compatible ledger.
+ * and anchors the cryptographic hash to an immutable EVM-compatible ledger
+ * via the BlueCarbonRegistry smart contract.
  *
  * Real EVM mode vs Simulation mode:
  *  - Real EVM Provider: Activated when BLOCKCHAIN_RPC_URL and BLOCKCHAIN_CONTRACT_ADDRESS are set.
- *    Submits transactions, tracks finality, polls transaction receipts, and verifies receipts.
+ *    Invokes `anchorRecord(bytes32,string,uint256)` on the deployed contract, submits signed
+ *    transactions, polls receipts, checks event logs, and verifies block finality.
  *  - Simulated Provider: Used in local/demo mode when RPC is unconfigured.
  *    Explicitly flags `simulated: true` so records are NEVER misrepresented as genuine on-chain.
  */
+import { ethers } from "ethers";
 
 export interface AnchorPayload {
   project_code: string;
@@ -41,8 +44,8 @@ export interface AnchorResult {
   status: "CONFIRMED" | "PENDING" | "FAILED";
   simulated: boolean;
   explorer_url: string | null;
-  confirmations?: number;
-  error?: string | null;
+  confirmations?: number | undefined;
+  error?: string | null | undefined;
 }
 
 export interface OnChainVerificationReport {
@@ -55,8 +58,15 @@ export interface OnChainVerificationReport {
   simulated: boolean;
   receiptStatus: "SUCCESS" | "REVERTED" | "NOT_FOUND";
   verifiedAt: string;
-  error?: string | null;
+  error?: string | null | undefined;
 }
+
+export const BLUE_CARBON_REGISTRY_ABI = [
+  "function anchorRecord(bytes32 recordHash, string calldata projectCode, uint256 verifiedTco2e) external",
+  "function verifyRecord(bytes32 recordHash) external view returns (bool exists, string memory projectCode, uint256 verifiedTco2e, uint256 blockNumber, uint256 timestamp, address verifier)",
+  "function getLatestAnchor(string calldata projectCode) external view returns (bytes32)",
+  "event RecordAnchored(bytes32 indexed recordHash, string indexed projectCode, uint256 verifiedTco2e, uint256 timestamp, address indexed verifier)",
+];
 
 /** Stable, key-sorted JSON so the exact same record structure always hashes identically. */
 export function canonicalize(value: unknown): string {
@@ -74,7 +84,7 @@ export async function sha256Hex(input: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-interface BlockchainProvider {
+export interface BlockchainProvider {
   readonly network: string;
   readonly simulated: boolean;
   anchor(recordHash: string, payload: AnchorPayload): Promise<Omit<AnchorResult, "record_hash">>;
@@ -84,7 +94,7 @@ interface BlockchainProvider {
 // -----------------------------------------------------------------------------
 // Simulated Provider (Demo/Local only - Explicitly flagged as SIMULATED)
 // -----------------------------------------------------------------------------
-const simulatedProvider: BlockchainProvider = {
+export const simulatedProvider: BlockchainProvider = {
   network: "Simulated Testnet (Demo Only)",
   simulated: true,
 
@@ -119,95 +129,91 @@ const simulatedProvider: BlockchainProvider = {
 };
 
 // -----------------------------------------------------------------------------
-// Real EVM Provider (Ethereum / Polygon / Arbitrum RPC client)
+// Real EVM Provider (Contract Invocation via ethers)
 // -----------------------------------------------------------------------------
-interface EvmConfig {
+export interface EvmConfig {
   rpcUrl: string;
-  privateKey?: string;
+  privateKey?: string | undefined;
   contract: string;
   network: string;
-  explorerUrl?: string;
+  explorerUrl?: string | undefined;
   confirmationsRequired: number;
 }
 
-function readEvmConfig(): EvmConfig | null {
-  const rpcUrl = process.env.BLOCKCHAIN_RPC_URL;
-  const contract = process.env.BLOCKCHAIN_CONTRACT_ADDRESS;
+export function readEvmConfig(): EvmConfig | null {
+  const rpcUrl = process.env["BLOCKCHAIN_RPC_URL"];
+  const contract = process.env["BLOCKCHAIN_CONTRACT_ADDRESS"];
   if (!rpcUrl || !contract) return null;
 
   return {
     rpcUrl,
-    privateKey: process.env.BLOCKCHAIN_PRIVATE_KEY,
+    privateKey: process.env["BLOCKCHAIN_PRIVATE_KEY"],
     contract,
-    network: process.env.BLOCKCHAIN_NETWORK ?? "Polygon Amoy Testnet",
-    explorerUrl: process.env.BLOCKCHAIN_EXPLORER_URL ?? "https://amoy.polygonscan.com",
-    confirmationsRequired: Number(process.env.BLOCKCHAIN_CONFIRMATIONS_REQUIRED ?? 2),
+    network: process.env["BLOCKCHAIN_NETWORK"] ?? "Polygon Amoy Testnet",
+    explorerUrl: process.env["BLOCKCHAIN_EXPLORER_URL"] ?? "https://amoy.polygonscan.com",
+    confirmationsRequired: Number(process.env["BLOCKCHAIN_CONFIRMATIONS_REQUIRED"] ?? 2),
   };
 }
 
-/** Low-level JSON-RPC helper using standard fetch without external dependencies. */
-async function rpcCall<T = unknown>(rpcUrl: string, method: string, params: unknown[] = []): Promise<T> {
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`RPC HTTP error (${response.status}): ${await response.text()}`);
-  }
-
-  const json = (await response.json()) as { error?: { message: string }; result?: T };
-  if (json.error) {
-    throw new Error(`RPC Call failed for ${method}: ${json.error.message}`);
-  }
-  return json.result as T;
-}
-
-interface RpcTxReceipt {
-  status: string; // "0x1" for success, "0x0" for revert
-  blockNumber: string;
-  transactionHash: string;
-  from: string;
-  to: string;
-}
-
-function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
+export { createRealEvmProvider as createEvmProvider };
+export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
   return {
     network: cfg.network,
     simulated: false,
 
     async anchor(recordHash, payload) {
+      if (!cfg.privateKey) {
+        return {
+          tx_hash: "",
+          block_number: null,
+          network: cfg.network,
+          status: "FAILED",
+          simulated: false,
+          explorer_url: null,
+          error: "BLOCKCHAIN_PRIVATE_KEY is not configured for signing real on-chain transactions.",
+        };
+      }
+
       try {
-        // If private key is not present, we cannot sign and submit real on-chain transactions directly.
-        if (!cfg.privateKey) {
+        const provider = new ethers.JsonRpcProvider(cfg.rpcUrl);
+        const wallet = new ethers.Wallet(cfg.privateKey, provider);
+        const contract = new ethers.Contract(cfg.contract, BLUE_CARBON_REGISTRY_ABI, wallet);
+
+        const bytes32Hash = recordHash.startsWith("0x") ? recordHash : `0x${recordHash}`;
+        const tco2eInteger = BigInt(Math.max(0, Math.round(payload.verified_tco2e ?? 0)));
+
+        // Submit the real contract transaction
+        const anchorFn = contract.getFunction("anchorRecord");
+        if (!anchorFn) {
+          throw new Error("Contract method anchorRecord not found in ABI definition.");
+        }
+        const txResponse = (await anchorFn(
+          bytes32Hash,
+          payload.project_code,
+          tco2eInteger,
+        )) as ethers.ContractTransactionResponse;
+
+        const txHash = txResponse.hash;
+        const explorerUrl = cfg.explorerUrl ? `${cfg.explorerUrl}/tx/${txHash}` : null;
+
+        // Poll actual receipt and wait for required confirmations
+        const receipt = await txResponse.wait(cfg.confirmationsRequired);
+
+        if (!receipt || receipt.status !== 1) {
           return {
-            tx_hash: "",
-            block_number: null,
+            tx_hash: txHash,
+            block_number: receipt ? receipt.blockNumber : null,
             network: cfg.network,
             status: "FAILED",
             simulated: false,
-            explorer_url: null,
-            error: "BLOCKCHAIN_PRIVATE_KEY is not configured for signing real on-chain transactions.",
+            explorer_url: explorerUrl,
+            error: "On-chain contract transaction reverted during execution.",
           };
         }
 
-        // Check RPC connection and get current block height
-        const currentBlockHex = await rpcCall<string>(cfg.rpcUrl, "eth_blockNumber");
-        const currentBlock = parseInt(currentBlockHex, 16);
-
-        // Compute 32-byte record hash formatted with 0x prefix
-        const bytes32RecordHash = recordHash.startsWith("0x") ? recordHash : `0x${recordHash}`;
-
-        // When a relayer or RPC provider with pre-funded account is configured,
-        // we submit the transaction or verify the anchor contract.
-        // For production demonstration, query receipt or send raw transaction:
-        const txHash = `0x${await sha256Hex(`evm:${cfg.contract}:${recordHash}:${currentBlock}`)}`;
-        const explorerUrl = cfg.explorerUrl ? `${cfg.explorerUrl}/tx/${txHash}` : null;
-
         return {
           tx_hash: txHash,
-          block_number: currentBlock,
+          block_number: receipt.blockNumber,
           network: cfg.network,
           status: "CONFIRMED",
           simulated: false,
@@ -229,7 +235,9 @@ function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
 
     async verify(txHash, recordHash) {
       try {
-        const receipt = await rpcCall<RpcTxReceipt | null>(cfg.rpcUrl, "eth_getTransactionReceipt", [txHash]);
+        const provider = new ethers.JsonRpcProvider(cfg.rpcUrl);
+        const receipt = await provider.getTransactionReceipt(txHash);
+
         if (!receipt) {
           return {
             isVerified: false,
@@ -241,27 +249,51 @@ function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
             simulated: false,
             receiptStatus: "NOT_FOUND",
             verifiedAt: new Date().toISOString(),
-            error: "Transaction receipt not found on chain. Transaction may still be pending or was dropped.",
+            error:
+              "Transaction receipt not found on chain. Transaction may still be pending or was dropped.",
           };
         }
 
-        const isSuccess = receipt.status === "0x1";
-        const blockNumber = parseInt(receipt.blockNumber, 16);
-        const currentBlockHex = await rpcCall<string>(cfg.rpcUrl, "eth_blockNumber");
-        const currentBlock = parseInt(currentBlockHex, 16);
-        const confirmations = Math.max(0, currentBlock - blockNumber + 1);
+        const currentBlock = await provider.getBlockNumber();
+        const confirmations = Math.max(0, currentBlock - receipt.blockNumber + 1);
+        const isSuccess = receipt.status === 1;
+
+        // Query contract view method
+        let existsInContract = false;
+        try {
+          const contract = new ethers.Contract(cfg.contract, BLUE_CARBON_REGISTRY_ABI, provider);
+          const bytes32Hash = recordHash.startsWith("0x") ? recordHash : `0x${recordHash}`;
+          const verifyFn = contract.getFunction("verifyRecord");
+          if (verifyFn) {
+            const onChainRecord = (await verifyFn(bytes32Hash)) as unknown as [
+              boolean,
+              string,
+              bigint,
+              bigint,
+              bigint,
+              string,
+            ];
+            existsInContract = onChainRecord[0] === true;
+          }
+        } catch {
+          existsInContract = false;
+        }
 
         return {
-          isVerified: isSuccess && confirmations >= cfg.confirmationsRequired,
+          isVerified: isSuccess && existsInContract && confirmations >= cfg.confirmationsRequired,
           txHash,
           recordHash,
-          blockNumber,
+          blockNumber: receipt.blockNumber,
           confirmations,
           network: cfg.network,
           simulated: false,
           receiptStatus: isSuccess ? "SUCCESS" : "REVERTED",
           verifiedAt: new Date().toISOString(),
-          error: !isSuccess ? "Transaction reverted on chain." : undefined,
+          error: !isSuccess
+            ? "Transaction reverted on chain."
+            : !existsInContract
+              ? "Record hash not found in registry contract state."
+              : undefined,
         };
       } catch (err) {
         return {
@@ -301,7 +333,10 @@ export async function anchorVerifiedRecord(payload: AnchorPayload): Promise<Anch
 }
 
 /** Independently verifies an anchored transaction and hash against the blockchain. */
-export async function verifyOnChainAnchor(txHash: string, recordHash: string): Promise<OnChainVerificationReport> {
+export async function verifyOnChainAnchor(
+  txHash: string,
+  recordHash: string,
+): Promise<OnChainVerificationReport> {
   const provider = getBlockchainProvider();
   return provider.verify(txHash, recordHash);
 }

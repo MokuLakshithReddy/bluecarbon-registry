@@ -26,10 +26,8 @@ export async function signCommunityUrls(urls: string[]) {
       continue;
     }
     const path = `${match[1]}/${match[2]}`;
-    const { data, error } = await admin.storage
-      .from("community")
-      .createSignedUrl(path, 60 * 60);
-    out[url] = error ? null : data?.signedUrl ?? null;
+    const { data, error } = await admin.storage.from("community").createSignedUrl(path, 60 * 60);
+    out[url] = error ? null : (data?.signedUrl ?? null);
   }
   return out;
 }

@@ -9,7 +9,11 @@ export const Route = createFileRoute("/_authenticated/analytics")({
   head: () => ({
     meta: [
       { title: "Registry Analytics · BlueCarbon MRV Registry" },
-      { name: "description", content: "Aggregate blue-carbon analytics: restored hectares, Verified Carbon Impact by ecosystem and verification throughput by state." },
+      {
+        name: "description",
+        content:
+          "Aggregate blue-carbon analytics: restored hectares, Verified Carbon Impact by ecosystem and verification throughput by state.",
+      },
       { property: "og:title", content: "Registry Analytics · BlueCarbon MRV Registry" },
       { property: "og:description", content: "Aggregate restoration and verification analytics." },
       { property: "og:type", content: "website" },
@@ -43,7 +47,10 @@ function AnalyticsPage() {
   const maxState = Math.max(1, ...byState.values());
 
   return (
-    <AppShell title="Registry analytics" description="Aggregate view of restoration extent and verification outcomes.">
+    <AppShell
+      title="Registry analytics"
+      description="Aggregate view of restoration extent and verification outcomes."
+    >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Projects" value={projects.length} />
         <StatCard label="Verified projects" value={verified.length} tone="ocean" />
@@ -53,7 +60,9 @@ function AnalyticsPage() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="panel p-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">By ecosystem</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            By ecosystem
+          </p>
           <table className="mt-3 w-full text-sm">
             <tbody>
               {[...byEcosystem.entries()].map(([key, value]) => (
@@ -68,19 +77,26 @@ function AnalyticsPage() {
           </table>
         </div>
         <div className="panel p-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Projects by state</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Projects by state
+          </p>
           <ul className="mt-3 space-y-2.5">
-            {[...byState.entries()].sort((a, b) => b[1] - a[1]).map(([state, count]) => (
-              <li key={state}>
-                <div className="flex justify-between text-sm">
-                  <span>{state}</span>
-                  <span className="text-muted-foreground">{count}</span>
-                </div>
-                <div className="mt-1 h-1.5 rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-teal" style={{ width: `${(count / maxState) * 100}%` }} />
-                </div>
-              </li>
-            ))}
+            {[...byState.entries()]
+              .sort((a, b) => b[1] - a[1])
+              .map(([state, count]) => (
+                <li key={state}>
+                  <div className="flex justify-between text-sm">
+                    <span>{state}</span>
+                    <span className="text-muted-foreground">{count}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-teal"
+                      style={{ width: `${(count / maxState) * 100}%` }}
+                    />
+                  </div>
+                </li>
+              ))}
           </ul>
         </div>
       </div>

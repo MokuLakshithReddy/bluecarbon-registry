@@ -16,7 +16,8 @@ export const Route = createFileRoute("/how-it-works")({
       { property: "og:title", content: "How MRV Works · BlueCarbon MRV Registry" },
       {
         property: "og:description",
-        content: "From geotagged field evidence to a publicly provable Verified Carbon Impact record.",
+        content:
+          "From geotagged field evidence to a publicly provable Verified Carbon Impact record.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -84,9 +85,10 @@ function HowItWorksPage() {
             <ShieldCheck className="size-4 text-teal" /> Scope of claims
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            The registry reports <strong>Verified Carbon Impact (tCO₂e)</strong> — an independently reviewed
-            estimate of carbon benefit from restoration activity. It does not issue, trade, retire or certify
-            carbon credits, and it is not a substitute for accredited carbon standards.
+            The registry reports <strong>Verified Carbon Impact (tCO₂e)</strong> — an independently
+            reviewed estimate of carbon benefit from restoration activity. It does not issue, trade,
+            retire or certify carbon credits, and it is not a substitute for accredited carbon
+            standards.
           </p>
         </div>
 

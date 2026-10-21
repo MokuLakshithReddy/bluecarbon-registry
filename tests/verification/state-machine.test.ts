@@ -131,7 +131,9 @@ test("State Machine: Optimistic locking protects against concurrent verification
 
   function applyVerification(expectedStatus: ProjectStatus, newStatus: ProjectStatus) {
     if (projectStatus !== expectedStatus) {
-      throw new Error(`Concurrency conflict: Project is '${projectStatus}', expected '${expectedStatus}'.`);
+      throw new Error(
+        `Concurrency conflict: Project is '${projectStatus}', expected '${expectedStatus}'.`,
+      );
     }
     projectStatus = newStatus;
   }
@@ -141,8 +143,5 @@ test("State Machine: Optimistic locking protects against concurrent verification
   assert.strictEqual(projectStatus, "VERIFIED");
 
   // Verifier 2 tries to reject simultaneously expecting UNDER_REVIEW -> conflict thrown!
-  assert.throws(
-    () => applyVerification("UNDER_REVIEW", "REJECTED"),
-    /Concurrency conflict/,
-  );
+  assert.throws(() => applyVerification("UNDER_REVIEW", "REJECTED"), /Concurrency conflict/);
 });

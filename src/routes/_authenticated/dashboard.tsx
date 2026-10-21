@@ -14,7 +14,8 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
       { property: "og:title", content: "Project Dashboard · BlueCarbon MRV Registry" },
       {
         property: "og:description",
-        content: "Track registration, validation and verification progress for blue-carbon projects.",
+        content:
+          "Track registration, validation and verification progress for blue-carbon projects.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

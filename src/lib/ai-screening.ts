@@ -29,14 +29,18 @@ export interface ScreeningResult {
 
 export function runScreening(
   project: Partial<ProjectRow>,
-  evidence: Pick<EvidenceRow, "file_hash" | "file_name" | "latitude" | "longitude" | "capture_date">[] = [],
+  evidence: Pick<
+    EvidenceRow,
+    "file_hash" | "file_name" | "latitude" | "longitude" | "capture_date"
+  >[] = [],
 ): ScreeningResult {
   const findings: ScreeningFinding[] = [];
   let score = 0;
 
   // GPS availability
   const hasGps = project.latitude != null && project.longitude != null;
-  if (hasGps) findings.push({ state: "OK", message: "GPS information available for the project site" });
+  if (hasGps)
+    findings.push({ state: "OK", message: "GPS information available for the project site" });
   else {
     findings.push({ state: "FLAG", message: "GPS coordinates are missing or inconsistent" });
     score += 30;
@@ -56,9 +60,13 @@ export function runScreening(
   // Duplicate imagery
   const keys = evidence.map((e) => e.file_hash || e.file_name.toLowerCase());
   const dupCount = keys.length - new Set(keys).size;
-  if (dupCount === 0) findings.push({ state: "OK", message: "No obvious duplicate images detected" });
+  if (dupCount === 0)
+    findings.push({ state: "OK", message: "No obvious duplicate images detected" });
   else {
-    findings.push({ state: "FLAG", message: `${dupCount} image(s) appear duplicated across submissions` });
+    findings.push({
+      state: "FLAG",
+      message: `${dupCount} image(s) appear duplicated across submissions`,
+    });
     score += Math.min(25, 12 * dupCount);
   }
 
@@ -69,9 +77,15 @@ export function runScreening(
       (e) => haversineKm(project.latitude!, project.longitude!, e.latitude!, e.longitude!) > 25,
     ).length;
     if (tagged.length > 0 && far === 0)
-      findings.push({ state: "OK", message: "Evidence geo-tags cluster around the registered site" });
+      findings.push({
+        state: "OK",
+        message: "Evidence geo-tags cluster around the registered site",
+      });
     else if (far > 0) {
-      findings.push({ state: "FLAG", message: `${far} evidence geo-tag(s) inconsistent with the project site` });
+      findings.push({
+        state: "FLAG",
+        message: `${far} evidence geo-tag(s) inconsistent with the project site`,
+      });
       score += 20;
     }
   }
@@ -96,13 +110,19 @@ export function runScreening(
     });
     score += 20;
   } else if (area > 0) {
-    findings.push({ state: "OK", message: "Reported plantation intensity is within expected bounds" });
+    findings.push({
+      state: "OK",
+      message: "Reported plantation intensity is within expected bounds",
+    });
   }
 
   // Survival rate plausibility
   const survival = project.survival_rate == null ? null : Number(project.survival_rate);
   if (survival != null && survival > 98) {
-    findings.push({ state: "FLAG", message: `Reported survival rate (${survival}%) is optimistically high` });
+    findings.push({
+      state: "FLAG",
+      message: `Reported survival rate (${survival}%) is optimistically high`,
+    });
     score += 10;
   }
 

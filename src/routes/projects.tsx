@@ -122,7 +122,9 @@ function ProjectsPage() {
                     </Link>
                     <span className="block text-xs text-muted-foreground">{p.project_code}</span>
                   </td>
-                  <td className="px-4 py-3">{ECOSYSTEM_LABEL[p.ecosystem as Ecosystem] ?? p.ecosystem}</td>
+                  <td className="px-4 py-3">
+                    {ECOSYSTEM_LABEL[p.ecosystem as Ecosystem] ?? p.ecosystem}
+                  </td>
                   <td className="px-4 py-3">
                     {[p.district, p.state].filter(Boolean).join(", ") || "—"}
                   </td>

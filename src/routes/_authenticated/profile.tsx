@@ -40,7 +40,10 @@ function ProfilePage() {
   }, [profile]);
 
   return (
-    <AppShell title="My profile" description="These details appear on verification records you submit.">
+    <AppShell
+      title="My profile"
+      description="These details appear on verification records you submit."
+    >
       <form
         className="panel max-w-xl space-y-4 p-5"
         onSubmit={async (event) => {

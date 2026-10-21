@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Link as ChainIcon, ExternalLink, ShieldCheck, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import {
+  Link as ChainIcon,
+  ExternalLink,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import { formatDate, formatTco2e, shortHash } from "@/lib/domain";
 import { verifyOnChainTxFn } from "@/lib/registry.functions";
 import { useServerFn } from "@tanstack/react-start";
@@ -31,7 +38,8 @@ export function BlockchainPanel({
           Blockchain Registry
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          No tamper-evident record yet. A record hash is anchored once an NCCR verifier approves the project.
+          No tamper-evident record yet. A record hash is anchored once an NCCR verifier approves the
+          project.
         </p>
       </div>
     );
@@ -63,9 +71,24 @@ export function BlockchainPanel({
           strong={record.status === "CONFIRMED"}
         />
         <Row label="Network" value={record.network} />
-        <Row label="Transaction Hash" value={shortHash(record.tx_hash, 10, 8)} mono title={record.tx_hash} />
-        <Row label="Canonical Record Hash" value={shortHash(record.record_hash, 10, 8)} mono title={record.record_hash} />
-        <Row label="Block Height" value={record.block_number ? `#${record.block_number.toLocaleString()}` : "Pending finality"} />
+        <Row
+          label="Transaction Hash"
+          value={shortHash(record.tx_hash, 10, 8)}
+          mono
+          title={record.tx_hash}
+        />
+        <Row
+          label="Canonical Record Hash"
+          value={shortHash(record.record_hash, 10, 8)}
+          mono
+          title={record.record_hash}
+        />
+        <Row
+          label="Block Height"
+          value={
+            record.block_number ? `#${record.block_number.toLocaleString()}` : "Pending finality"
+          }
+        />
         <Row label="Anchored At" value={formatDate(record.created_at)} />
         {record.verified_tco2e != null ? (
           <Row label="Anchored Verified Impact" value={formatTco2e(record.verified_tco2e)} />
@@ -80,9 +103,10 @@ export function BlockchainPanel({
       <div className="flex items-start gap-2 border-t border-border bg-secondary/50 px-5 py-4 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-ocean" />
         <p>
-          Only the cryptographic SHA-256 digest of the canonical verified record is anchored — no photographs,
-          identifying documents or raw datasets are stored on-chain. The anchor guarantees tamper-evidence of
-          the verified submission record; it does not constitute an issued or tradable carbon credit.
+          Only the cryptographic SHA-256 digest of the canonical verified record is anchored — no
+          photographs, identifying documents or raw datasets are stored on-chain. The anchor
+          guarantees tamper-evidence of the verified submission record; it does not constitute an
+          issued or tradable carbon credit.
         </p>
       </div>
     </div>
@@ -104,7 +128,9 @@ function Row({
 }) {
   return (
     <div>
-      <dt className="text-[0.7rem] font-semibold uppercase tracking-widest text-muted-foreground">{label}</dt>
+      <dt className="text-[0.7rem] font-semibold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </dt>
       <dd
         title={title}
         className={`mt-0.5 text-sm ${mono ? "mono-hash" : ""} ${

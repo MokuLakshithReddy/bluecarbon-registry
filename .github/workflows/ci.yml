@@ -12,21 +12,17 @@ concurrency:
 
 jobs:
   test:
-    name: Test & Security Audit (Node ${{ matrix.node-version }})
+    name: Test, Lint & Security Audit (Bun)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20.x, 22.x, 24.x]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - name: Setup Bun Runtime
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: "npm"
+          bun-version: latest
 
       - name: Check for committed environment secrets
         run: |
@@ -35,17 +31,17 @@ jobs:
             exit 1
           fi
 
-      - name: Install dependencies
-        run: npm ci || npm install
+      - name: Install dependencies (reproducible frozen lockfile)
+        run: bun install --frozen-lockfile
 
       - name: Run automated test suite
-        run: npm test
+        run: bun test
 
       - name: Run TypeScript typecheck
-        run: npm run typecheck
+        run: bun run typecheck
 
-      - name: Run code linter
-        run: npm run lint || true
+      - name: Run code linter (blocking)
+        run: bun run lint
 
   build:
     name: Production Build Verification
@@ -56,14 +52,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22.x
-        uses: actions/setup-node@v4
+      - name: Setup Bun Runtime
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22.x
-          cache: "npm"
+          bun-version: latest
 
-      - name: Install dependencies
-        run: npm ci || npm install
+      - name: Install dependencies (reproducible frozen lockfile)
+        run: bun install --frozen-lockfile
 
       - name: Build production bundle
         env:
@@ -73,4 +68,4 @@ jobs:
           SUPABASE_PROJECT_ID: "ci-mock-project"
           SUPABASE_URL: "https://ci-mock-project.supabase.co"
           SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ci_mock_key"
-        run: npm run build
+        run: bun run build

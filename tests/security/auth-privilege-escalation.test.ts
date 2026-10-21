@@ -22,8 +22,10 @@ function simulateHandleNewUser(rawUserMetaData: Record<string, unknown>) {
   // Role in raw_user_meta_data is strictly ignored.
   const assignedRole = "project_owner"; // Fixed least-privilege default
   const profile = {
-    full_name: typeof rawUserMetaData.full_name === "string" ? rawUserMetaData.full_name.trim() : null,
-    organization: typeof rawUserMetaData.organization === "string" ? rawUserMetaData.organization.trim() : null,
+    full_name:
+      typeof rawUserMetaData.full_name === "string" ? rawUserMetaData.full_name.trim() : null,
+    organization:
+      typeof rawUserMetaData.organization === "string" ? rawUserMetaData.organization.trim() : null,
     phone: typeof rawUserMetaData.phone === "string" ? rawUserMetaData.phone.trim() : null,
   };
   return { assignedRole, profile };
@@ -50,7 +52,10 @@ test("Security Case 1: Ordinary user cannot elevate to admin or verifier via sig
 // -----------------------------------------------------------------------------
 // Case 2: Project Ownership Isolation
 // -----------------------------------------------------------------------------
-function checkCanEditProject(callerUserId: string, project: { owner_id: string | null; status: string }) {
+function checkCanEditProject(
+  callerUserId: string,
+  project: { owner_id: string | null; status: string },
+) {
   // Only the owner can edit, and only in DRAFT or CORRECTION_REQUIRED states
   const isOwner = project.owner_id === callerUserId;
   const isEditableState = project.status === "DRAFT" || project.status === "CORRECTION_REQUIRED";
@@ -73,8 +78,14 @@ test("Security Case 2: Project owner cannot edit another owner's project", () =>
   assert.strictEqual(checkCanEditProject(bobUserId, aliceProject), false);
 
   // Alice cannot edit her project once SUBMITTED or VERIFIED
-  assert.strictEqual(checkCanEditProject(aliceUserId, { ...aliceProject, status: "SUBMITTED" }), false);
-  assert.strictEqual(checkCanEditProject(aliceUserId, { ...aliceProject, status: "VERIFIED" }), false);
+  assert.strictEqual(
+    checkCanEditProject(aliceUserId, { ...aliceProject, status: "SUBMITTED" }),
+    false,
+  );
+  assert.strictEqual(
+    checkCanEditProject(aliceUserId, { ...aliceProject, status: "VERIFIED" }),
+    false,
+  );
 });
 
 // -----------------------------------------------------------------------------
@@ -82,7 +93,9 @@ test("Security Case 2: Project owner cannot edit another owner's project", () =>
 // -----------------------------------------------------------------------------
 function assertVerifierAuthorization(callerRoles: string[]) {
   if (!callerRoles.includes("verifier") && !callerRoles.includes("admin")) {
-    throw new Error("Unauthorized: Only authorized NCCR verifiers or administrators can record verification decisions.");
+    throw new Error(
+      "Unauthorized: Only authorized NCCR verifiers or administrators can record verification decisions.",
+    );
   }
 }
 
@@ -107,7 +120,10 @@ test("Security Case 3: Non-verifier cannot alter verification results or audit r
 // -----------------------------------------------------------------------------
 // Case 4: Notifications Access Boundaries
 // -----------------------------------------------------------------------------
-function checkCanAccessNotification(callerEmail: string, notification: { recipient_email: string }) {
+function checkCanAccessNotification(
+  callerEmail: string,
+  notification: { recipient_email: string },
+) {
   return callerEmail.toLowerCase().trim() === notification.recipient_email.toLowerCase().trim();
 }
 
@@ -172,9 +188,18 @@ test("Security Case 5: Anonymous user requesting public project receives only pu
 
   // Private evidence items MUST be completely excluded from public payload
   assert.strictEqual(publicView.evidence.length, 2);
-  assert.strictEqual(publicView.evidence.every((e) => e.is_public), true);
-  assert.strictEqual(publicView.evidence.some((e) => e.file_name.includes("financial")), false);
-  assert.strictEqual(publicView.evidence.some((e) => e.file_name.includes("land_ownership")), false);
+  assert.strictEqual(
+    publicView.evidence.every((e) => e.is_public),
+    true,
+  );
+  assert.strictEqual(
+    publicView.evidence.some((e) => e.file_name.includes("financial")),
+    false,
+  );
+  assert.strictEqual(
+    publicView.evidence.some((e) => e.file_name.includes("land_ownership")),
+    false,
+  );
 
   // PII must be null or redacted
   assert.strictEqual(publicView.contact_phone, null);

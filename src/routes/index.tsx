@@ -8,7 +8,13 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { CarbonDisclaimer, DemoDataTag } from "@/components/CarbonDisclaimer";
 import { MapPanel } from "@/components/MapPanel";
 import { getPublicProjects } from "@/lib/registry.functions";
-import { ECOSYSTEM_LABEL, formatNumber, formatTco2e, type Ecosystem, type ProjectStatus } from "@/lib/domain";
+import {
+  ECOSYSTEM_LABEL,
+  formatNumber,
+  formatTco2e,
+  type Ecosystem,
+  type ProjectStatus,
+} from "@/lib/domain";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -70,9 +76,9 @@ function HomePage() {
             Monitoring, reporting and verification for India's blue-carbon restoration
           </h1>
           <p className="mt-5 max-w-2xl text-base text-navy-foreground/80">
-            Capture field evidence, screen it automatically, verify it through NCCR reviewers, anchor the
-            outcome in a tamper-evident record, and let anyone prove it publicly with a project code or QR
-            scan.
+            Capture field evidence, screen it automatically, verify it through NCCR reviewers,
+            anchor the outcome in a tamper-evident record, and let anyone prove it publicly with a
+            project code or QR scan.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link

@@ -65,7 +65,8 @@ function PublicVerifyPage() {
         <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6">
           <h1 className="font-display text-2xl font-semibold">No public record for “{code}”</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Only projects verified by NCCR reviewers are published publicly. Check the code and try again.
+            Only projects verified by NCCR reviewers are published publicly. Check the code and try
+            again.
           </p>
           <Link to="/verify" className="mt-6 inline-block text-sm font-semibold text-primary">
             ← Verify another project
@@ -97,7 +98,10 @@ function PublicVerifyPage() {
   return (
     <PublicLayout>
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <Link to="/projects" className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+        <Link
+          to="/projects"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+        >
           <ArrowLeft className="size-4" /> All projects
         </Link>
 
@@ -119,7 +123,11 @@ function PublicVerifyPage() {
           <StatCard
             label="Verified Carbon Impact"
             value={formatTco2e(project.verified_carbon)}
-            hint={project.verified_at ? `Verified ${formatDate(project.verified_at)}` : "Pending verification"}
+            hint={
+              project.verified_at
+                ? `Verified ${formatDate(project.verified_at)}`
+                : "Pending verification"
+            }
             tone="teal"
             icon={<Leaf className="size-4" />}
           />
@@ -156,7 +164,10 @@ function PublicVerifyPage() {
               ) : null}
               <dl className="mt-4 grid gap-4 sm:grid-cols-2">
                 {[
-                  ["Ecosystem", ECOSYSTEM_LABEL[project.ecosystem as Ecosystem] ?? project.ecosystem],
+                  [
+                    "Ecosystem",
+                    ECOSYSTEM_LABEL[project.ecosystem as Ecosystem] ?? project.ecosystem,
+                  ],
                   ["Restoration method", project.restoration_method ?? "—"],
                   ["Species", project.species ?? "—"],
                   ["Restoration start", formatDate(project.restoration_start)],
@@ -171,7 +182,15 @@ function PublicVerifyPage() {
               </dl>
             </div>
 
-            {markers.length ? <MapPanel markers={markers} center={[markers[0]!.latitude, markers[0]!.longitude]} zoom={9} height={320} linkTo="none" /> : null}
+            {markers.length ? (
+              <MapPanel
+                markers={markers}
+                center={[markers[0]!.latitude, markers[0]!.longitude]}
+                zoom={9}
+                height={320}
+                linkTo="none"
+              />
+            ) : null}
 
             <TimelinePanel
               events={timeline.map((event) => ({

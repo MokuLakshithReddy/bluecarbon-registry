@@ -29,7 +29,9 @@ export function QrVerificationPanel({ projectCode }: { projectCode: string }) {
             Scan or share this code to open the public verification page for{" "}
             <span className="font-semibold text-foreground">{projectCode}</span>.
           </p>
-          <p className="mono-hash rounded-lg border border-border bg-secondary/60 p-2">{url || "…"}</p>
+          <p className="mono-hash rounded-lg border border-border bg-secondary/60 p-2">
+            {url || "…"}
+          </p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

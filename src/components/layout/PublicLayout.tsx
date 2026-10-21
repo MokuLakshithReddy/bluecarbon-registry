@@ -14,7 +14,6 @@ const NAV = [
   { to: "/about", label: "About" },
 ] as const;
 
-
 export function PublicLayout({ children }: { children: ReactNode }) {
   const { session, isVerifier } = useAuth();
 
@@ -68,7 +67,10 @@ export function PublicLayout({ children }: { children: ReactNode }) {
               Register a Project
             </Link>
             <Sheet>
-              <SheetTrigger className="rounded-lg border border-border p-2 lg:hidden" aria-label="Open menu">
+              <SheetTrigger
+                className="rounded-lg border border-border p-2 lg:hidden"
+                aria-label="Open menu"
+              >
                 <Menu className="size-4" />
               </SheetTrigger>
               <SheetContent side="right" className="w-72">
@@ -94,31 +96,49 @@ export function PublicLayout({ children }: { children: ReactNode }) {
           <div className="md:col-span-2">
             <p className="font-display text-lg font-semibold">BlueCarbon MRV Registry</p>
             <p className="mt-2 max-w-md text-sm text-navy-foreground/70">
-              A trusted digital MRV and registry system that connects field evidence, automated validation,
-              human verification, tamper-evident records and verified carbon impact for India's blue-carbon
-              ecosystems.
+              A trusted digital MRV and registry system that connects field evidence, automated
+              validation, human verification, tamper-evident records and verified carbon impact for
+              India's blue-carbon ecosystems.
             </p>
             <p className="mt-4 text-xs text-navy-foreground/60">
-              Demonstration prototype built for the Ministry of Earth Sciences problem statement. Data shown is
-              demonstration data and does not represent official government records. This system does not issue
-              carbon credits.
+              Demonstration prototype built for the Ministry of Earth Sciences problem statement.
+              Data shown is demonstration data and does not represent official government records.
+              This system does not issue carbon credits.
             </p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-navy-foreground/60">Registry</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-navy-foreground/60">
+              Registry
+            </p>
             <ul className="mt-3 space-y-2 text-sm text-navy-foreground/80">
-              <li><Link to="/projects">Verified Projects</Link></li>
-              <li><Link to="/map">Coastal Map</Link></li>
-              <li><Link to="/how-it-works">How It Works</Link></li>
+              <li>
+                <Link to="/projects">Verified Projects</Link>
+              </li>
+              <li>
+                <Link to="/map">Coastal Map</Link>
+              </li>
+              <li>
+                <Link to="/how-it-works">How It Works</Link>
+              </li>
             </ul>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-navy-foreground/60">Access</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-navy-foreground/60">
+              Access
+            </p>
             <ul className="mt-3 space-y-2 text-sm text-navy-foreground/80">
-              <li><Link to="/auth">Project Owner Sign In</Link></li>
-              <li><Link to="/auth">NCCR Verifier Sign In</Link></li>
-              <li><Link to="/verify">Verify a Project</Link></li>
-              <li><Link to="/about">About & Roadmap</Link></li>
+              <li>
+                <Link to="/auth">Project Owner Sign In</Link>
+              </li>
+              <li>
+                <Link to="/auth">NCCR Verifier Sign In</Link>
+              </li>
+              <li>
+                <Link to="/verify">Verify a Project</Link>
+              </li>
+              <li>
+                <Link to="/about">About & Roadmap</Link>
+              </li>
             </ul>
           </div>
         </div>

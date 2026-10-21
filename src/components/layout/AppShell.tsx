@@ -5,7 +5,6 @@ import {
   Bell,
   Building2,
   ClipboardCheck,
-
   FileStack,
   FolderKanban,
   Gauge,
@@ -18,7 +17,6 @@ import {
   UserRound,
   Users,
   Waves,
-
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -46,7 +44,6 @@ const VERIFIER_NAV = [
   { to: "/audit-logs", label: "Audit Logs", icon: ScrollText },
   { to: "/notifications", label: "Notifications", icon: Bell },
 ] as const;
-
 
 export function AppShell({
   title,
@@ -120,7 +117,9 @@ export function AppShell({
           <p className="truncate text-sm font-semibold text-sidebar-foreground">
             {profile?.full_name ?? profile?.email ?? "Signed in"}
           </p>
-          <p className="truncate text-xs text-sidebar-foreground/60">{profile?.organization ?? profile?.email}</p>
+          <p className="truncate text-xs text-sidebar-foreground/60">
+            {profile?.organization ?? profile?.email}
+          </p>
           <button
             type="button"
             onClick={async () => {
@@ -139,7 +138,10 @@ export function AppShell({
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">
               <Sheet>
-                <SheetTrigger className="mt-1 rounded-lg border border-border p-2 lg:hidden" aria-label="Open menu">
+                <SheetTrigger
+                  className="mt-1 rounded-lg border border-border p-2 lg:hidden"
+                  aria-label="Open menu"
+                >
                   <Menu className="size-4" />
                 </SheetTrigger>
                 <SheetContent side="left" className="w-72 bg-sidebar p-4">
@@ -157,7 +159,9 @@ export function AppShell({
                 </SheetContent>
               </Sheet>
               <div>
-                <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+                <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+                  {title}
+                </h1>
                 {description ? (
                   <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>
                 ) : null}

@@ -78,7 +78,8 @@ function RegisterProjectPage() {
 
   const lat = Number(form.latitude);
   const lng = Number(form.longitude);
-  const hasPoint = Number.isFinite(lat) && Number.isFinite(lng) && form.latitude !== "" && form.longitude !== "";
+  const hasPoint =
+    Number.isFinite(lat) && Number.isFinite(lng) && form.latitude !== "" && form.longitude !== "";
 
   return (
     <AppShell
@@ -141,7 +142,12 @@ function RegisterProjectPage() {
             </p>
             <div className="space-y-1.5">
               <Label htmlFor="p-name">Project name</Label>
-              <Input id="p-name" required value={form.name} onChange={(e) => set("name", e.target.value)} />
+              <Input
+                id="p-name"
+                required
+                value={form.name}
+                onChange={(e) => set("name", e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="p-org">Implementing organization</Label>
@@ -198,7 +204,11 @@ function RegisterProjectPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="p-district">District</Label>
-              <Input id="p-district" value={form.district} onChange={(e) => set("district", e.target.value)} />
+              <Input
+                id="p-district"
+                value={form.district}
+                onChange={(e) => set("district", e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="p-coast">Coastal area / creek</Label>
@@ -210,11 +220,19 @@ function RegisterProjectPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="p-lat">Latitude</Label>
-              <Input id="p-lat" value={form.latitude} onChange={(e) => set("latitude", e.target.value)} />
+              <Input
+                id="p-lat"
+                value={form.latitude}
+                onChange={(e) => set("latitude", e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="p-lng">Longitude</Label>
-              <Input id="p-lng" value={form.longitude} onChange={(e) => set("longitude", e.target.value)} />
+              <Input
+                id="p-lng"
+                value={form.longitude}
+                onChange={(e) => set("longitude", e.target.value)}
+              />
             </div>
             <div className="sm:col-span-2">
               <p className="mb-2 text-xs text-muted-foreground">
@@ -293,7 +311,11 @@ function RegisterProjectPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="p-species">Species planted</Label>
-              <Input id="p-species" value={form.species} onChange={(e) => set("species", e.target.value)} />
+              <Input
+                id="p-species"
+                value={form.species}
+                onChange={(e) => set("species", e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="p-count">Plant count</Label>
@@ -321,8 +343,8 @@ function RegisterProjectPage() {
             </p>
             <p className="mt-3 font-display text-2xl font-semibold">{formatTco2e(estimate)}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Demonstration coefficient for {ECOSYSTEM_LABEL[form.ecosystem]}. The final Verified Carbon Impact
-              is confirmed by an NCCR verifier.
+              Demonstration coefficient for {ECOSYSTEM_LABEL[form.ecosystem]}. The final Verified
+              Carbon Impact is confirmed by an NCCR verifier.
             </p>
           </div>
           <CarbonDisclaimer />

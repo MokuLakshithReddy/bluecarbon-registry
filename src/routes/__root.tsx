@@ -47,7 +47,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">This page didn't load</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          This page didn't load
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
@@ -88,10 +90,26 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:title", content: "BlueCarbon MRV Registry · Ministry of Earth Sciences" },
       { name: "twitter:title", content: "BlueCarbon MRV Registry · Ministry of Earth Sciences" },
-      { property: "og:description", content: "A digital MRV and registry system for India's blue-carbon restoration projects: field evidence, automated validation, NCCR verification, tamper-evident records and Verified Carbon Impact in tCO₂e." },
-      { name: "twitter:description", content: "A digital MRV and registry system for India's blue-carbon restoration projects: field evidence, automated validation, NCCR verification, tamper-evident records and Verified Carbon Impact in tCO₂e." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/54129145-d34b-46c5-a2fb-8870e5cd8ce7/id-preview-6e5dba36--d81ed2e0-67cd-4fea-951b-0a6dd77c0957.lovable.app-1785558366655.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/54129145-d34b-46c5-a2fb-8870e5cd8ce7/id-preview-6e5dba36--d81ed2e0-67cd-4fea-951b-0a6dd77c0957.lovable.app-1785558366655.png" },
+      {
+        property: "og:description",
+        content:
+          "A digital MRV and registry system for India's blue-carbon restoration projects: field evidence, automated validation, NCCR verification, tamper-evident records and Verified Carbon Impact in tCO₂e.",
+      },
+      {
+        name: "twitter:description",
+        content:
+          "A digital MRV and registry system for India's blue-carbon restoration projects: field evidence, automated validation, NCCR verification, tamper-evident records and Verified Carbon Impact in tCO₂e.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/54129145-d34b-46c5-a2fb-8870e5cd8ce7/id-preview-6e5dba36--d81ed2e0-67cd-4fea-951b-0a6dd77c0957.lovable.app-1785558366655.png",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/54129145-d34b-46c5-a2fb-8870e5cd8ce7/id-preview-6e5dba36--d81ed2e0-67cd-4fea-951b-0a6dd77c0957.lovable.app-1785558366655.png",
+      },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

@@ -26,12 +26,20 @@ export function StatCard({
   return (
     <div className={cn("panel p-5", className)}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {label}
+        </p>
         {icon ? (
-          <span className={cn("flex size-8 items-center justify-center rounded-lg", toneRing[tone])}>{icon}</span>
+          <span
+            className={cn("flex size-8 items-center justify-center rounded-lg", toneRing[tone])}
+          >
+            {icon}
+          </span>
         ) : null}
       </div>
-      <p className="mt-3 font-display text-2xl font-semibold text-foreground sm:text-[1.7rem]">{value}</p>
+      <p className="mt-3 font-display text-2xl font-semibold text-foreground sm:text-[1.7rem]">
+        {value}
+      </p>
       {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -54,8 +62,12 @@ export function SectionHeading({
         {eyebrow ? (
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal">{eyebrow}</p>
         ) : null}
-        <h2 className="mt-1 font-display text-xl font-semibold text-foreground sm:text-2xl">{title}</h2>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p> : null}
+        <h2 className="mt-1 font-display text-xl font-semibold text-foreground sm:text-2xl">
+          {title}
+        </h2>
+        {description ? (
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
+        ) : null}
       </div>
       {action}
     </div>

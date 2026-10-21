@@ -86,12 +86,14 @@ Blockchain does NOT prove that the original field data is true.
 It provides a tamper-evident record of information that has already been submitted and verified.
 
 ==================================================
+
 1. USER ROLES
-==================================================
+   \==================================================
 
 Create 3 user roles.
 
---------------------------------
+---
+
 A. PROJECT OWNER
 --------------------------------
 
@@ -113,7 +115,8 @@ Capabilities:
 - View blockchain proof
 - Generate/view QR verification certificate
 
---------------------------------
+---
+
 B. NCCR / GOVERNMENT VERIFIER
 --------------------------------
 
@@ -133,7 +136,8 @@ Capabilities:
 - View verification history
 - Create blockchain registry record after approval
 
---------------------------------
+---
+
 C. PUBLIC USER
 --------------------------------
 
@@ -150,8 +154,7 @@ Capabilities:
 - View blockchain proof
 - View verification timeline
 
-==================================================
-2. AUTHENTICATION
+================================================== 2. AUTHENTICATION
 ==================================================
 
 Create:
@@ -174,8 +177,7 @@ Public users do not require login.
 
 If real authentication is unavailable, implement functional demo authentication using the application database.
 
-==================================================
-3. DESIGN SYSTEM
+================================================== 3. DESIGN SYSTEM
 ==================================================
 
 Create a premium government + climate-tech interface.
@@ -224,8 +226,7 @@ The application should look suitable for:
 
 Make the application fully responsive.
 
-==================================================
-4. LANDING PAGE
+================================================== 4. LANDING PAGE
 ==================================================
 
 Create a professional landing page.
@@ -284,8 +285,7 @@ Instead display:
 
 "1.84M tCO₂e Verified Carbon Impact"
 
-==================================================
-5. PROJECT OWNER DASHBOARD
+================================================== 5. PROJECT OWNER DASHBOARD
 ==================================================
 
 Create a dashboard for project owners.
@@ -323,13 +323,13 @@ Primary button:
 
 "+ Register New Project"
 
-==================================================
-6. PROJECT REGISTRATION
+================================================== 6. PROJECT REGISTRATION
 ==================================================
 
 Create a multi-step project registration form.
 
---------------------------------
+---
+
 STEP 1 — BASIC INFORMATION
 --------------------------------
 
@@ -342,7 +342,8 @@ Fields:
 - Contact Email
 - Contact Phone
 
---------------------------------
+---
+
 STEP 2 — ECOSYSTEM
 --------------------------------
 
@@ -354,7 +355,8 @@ Dropdown:
 - Coastal Wetland
 - Other
 
---------------------------------
+---
+
 STEP 3 — LOCATION
 --------------------------------
 
@@ -374,7 +376,8 @@ Allow the user to:
 - Enter coordinates
 - Select location on map
 
---------------------------------
+---
+
 STEP 4 — RESTORATION INFORMATION
 --------------------------------
 
@@ -399,7 +402,8 @@ NOT:
 
 "Carbon Credits"
 
---------------------------------
+---
+
 STEP 5 — EVIDENCE
 --------------------------------
 
@@ -415,7 +419,8 @@ Store files using normal application/cloud storage.
 
 DO NOT store large files directly on blockchain.
 
---------------------------------
+---
+
 STEP 6 — REVIEW
 --------------------------------
 
@@ -427,8 +432,7 @@ Buttons:
 
 "Submit for Verification"
 
-==================================================
-7. FIELD EVIDENCE SYSTEM
+================================================== 7. FIELD EVIDENCE SYSTEM
 ==================================================
 
 Each evidence item should contain:
@@ -454,8 +458,7 @@ Verifier can:
 - Mark evidence suspicious
 - Add comments
 
-==================================================
-8. AUTOMATED VALIDATION ENGINE
+================================================== 8. AUTOMATED VALIDATION ENGINE
 ==================================================
 
 Create an automated validation engine.
@@ -483,15 +486,14 @@ Example:
 
 Checks:
 
-GPS Coordinates        ✓
-Required Data           ✓
-Evidence Uploaded      ✓
-Duplicate Check        ✓
-Date Consistency       ✓
-Carbon Data             ⚠
+GPS Coordinates ✓
+Required Data ✓
+Evidence Uploaded ✓
+Duplicate Check ✓
+Date Consistency ✓
+Carbon Data ⚠
 
-==================================================
-9. AI-ASSISTED ANOMALY DETECTION
+================================================== 9. AI-ASSISTED ANOMALY DETECTION
 ==================================================
 
 Create an AI-assisted screening module.
@@ -530,8 +532,7 @@ If an external AI API is unavailable, implement the screening using deterministi
 
 Do NOT pretend that a real AI API was used if it was not.
 
-==================================================
-10. NCCR VERIFIER DASHBOARD
+================================================== 10. NCCR VERIFIER DASHBOARD
 ==================================================
 
 Create a separate government/NCCR verification dashboard.
@@ -575,8 +576,7 @@ Action:
 
 "Review"
 
-==================================================
-11. PROJECT VERIFICATION PAGE
+================================================== 11. PROJECT VERIFICATION PAGE
 ==================================================
 
 When the verifier clicks "Review", display:
@@ -618,8 +618,7 @@ Require verifier comments for:
 - Rejection
 - Correction request
 
-==================================================
-12. CARBON IMPACT CALCULATION
+================================================== 12. CARBON IMPACT CALCULATION
 ==================================================
 
 Create a carbon-impact calculation module.
@@ -668,8 +667,7 @@ Do not invent scientific carbon coefficients without labeling them as demonstrat
 
 The system should be architected so an approved scientific methodology can be integrated later.
 
-==================================================
-13. BLOCKCHAIN REGISTRY
+================================================== 13. BLOCKCHAIN REGISTRY
 ==================================================
 
 Create a blockchain registry layer.
@@ -737,8 +735,7 @@ from:
 
 Do NOT imply that the blockchain record itself represents an issued carbon credit.
 
-==================================================
-14. QR VERIFICATION
+================================================== 14. QR VERIFICATION
 ==================================================
 
 After a project is verified, generate a QR code.
@@ -777,8 +774,7 @@ Add:
 
 "Verify Blockchain Record"
 
-==================================================
-15. PUBLIC VERIFICATION PAGE
+================================================== 15. PUBLIC VERIFICATION PAGE
 ==================================================
 
 Create a professional public verification page.
@@ -840,8 +836,7 @@ Show:
 
 "18,420 tCO₂e Verified Carbon Impact"
 
-==================================================
-16. PROJECT STATUS TIMELINE
+================================================== 16. PROJECT STATUS TIMELINE
 ==================================================
 
 Every project must have a timeline.
@@ -866,8 +861,7 @@ Project Verified
 02 Aug 2026
 Blockchain Record Created
 
-==================================================
-17. AUDIT LOG
+================================================== 17. AUDIT LOG
 ==================================================
 
 Create an audit log.
@@ -892,8 +886,7 @@ Blockchain record created
 
 After blockchain registration, clearly indicate that the record has a tamper-evident proof.
 
-==================================================
-18. DATABASE
+================================================== 18. DATABASE
 ==================================================
 
 Create database models:
@@ -926,8 +919,7 @@ BC-MNG-0001
 BC-SEA-0002
 BC-WET-0003
 
-==================================================
-19. NOTIFICATIONS
+================================================== 19. NOTIFICATIONS
 ==================================================
 
 Create notifications:
@@ -948,8 +940,7 @@ Example:
 
 "Project BC-MNG-0001 has been verified."
 
-==================================================
-20. DEMO DATA
+================================================== 20. DEMO DATA
 ==================================================
 
 Populate the application with realistic demo data.
@@ -977,8 +968,7 @@ Use realistic but clearly DEMONSTRATION values.
 
 Do NOT represent demo values as real government data.
 
-==================================================
-21. ANALYTICS
+================================================== 21. ANALYTICS
 ==================================================
 
 Create analytics.
@@ -1011,8 +1001,7 @@ NOT:
 
 "Carbon Credits Issued"
 
-==================================================
-22. MAP
+================================================== 22. MAP
 ==================================================
 
 Create an India coastal map.
@@ -1037,8 +1026,7 @@ Button:
 
 "View Project"
 
-==================================================
-23. NAVIGATION
+================================================== 23. NAVIGATION
 ==================================================
 
 Main navigation:
@@ -1071,8 +1059,7 @@ Public:
 
 Verify Project
 
-==================================================
-24. RESPONSIVE DESIGN
+================================================== 24. RESPONSIVE DESIGN
 ==================================================
 
 The application must work on:
@@ -1093,8 +1080,7 @@ Field workers should be able to:
 
 with minimal steps.
 
-==================================================
-25. TECHNICAL REQUIREMENTS
+================================================== 25. TECHNICAL REQUIREMENTS
 ==================================================
 
 Preferred stack:
@@ -1140,8 +1126,7 @@ Storage credentials
 
 Never expose secrets in frontend code.
 
-==================================================
-26. UX REQUIREMENTS
+================================================== 26. UX REQUIREMENTS
 ==================================================
 
 Every important action must provide feedback.
@@ -1176,8 +1161,7 @@ Approve Project
 Reject Project
 Request Correction
 
-==================================================
-27. SECURITY AND DATA TRUST
+================================================== 27. SECURITY AND DATA TRUST
 ==================================================
 
 Implement role-based access control.
@@ -1198,8 +1182,7 @@ Do not expose:
 - Private documents
 - Authentication credentials
 
-==================================================
-28. COMPLETE DEMO FLOW
+================================================== 28. COMPLETE DEMO FLOW
 ==================================================
 
 The following flow MUST work end-to-end.
@@ -1311,8 +1294,7 @@ Show:
 ✓ Verified Carbon Impact
 ✓ Blockchain Proof
 
-==================================================
-29. IMPORTANT SCOPE LIMITATIONS
+================================================== 29. IMPORTANT SCOPE LIMITATIONS
 ==================================================
 
 DO NOT build these in the MVP:
@@ -1337,8 +1319,7 @@ DO NOT build these in the MVP:
 
 These can be future extensions.
 
-==================================================
-30. FUTURE ROADMAP
+================================================== 30. FUTURE ROADMAP
 ==================================================
 
 Create an "Future Expansion" section showing:
@@ -1362,8 +1343,7 @@ Phase 3:
 
 Make it clear these are future capabilities and NOT part of the MVP.
 
-==================================================
-31. FINAL MVP PRIORITY
+================================================== 31. FINAL MVP PRIORITY
 ==================================================
 
 Prioritize functionality in this order:
@@ -1383,8 +1363,7 @@ Prioritize functionality in this order:
 
 If any feature cannot be fully implemented, create a realistic functional demonstration rather than leaving broken buttons.
 
-==================================================
-32. FINAL PRODUCT MESSAGE
+================================================== 32. FINAL PRODUCT MESSAGE
 ==================================================
 
 The application should communicate this clearly:
@@ -1412,8 +1391,7 @@ It does NOT claim:
 
 "CARBON CREDITS ISSUED"
 
-==================================================
-33. FINAL REQUIREMENT
+================================================== 33. FINAL REQUIREMENT
 ==================================================
 
 Build the actual working application, not a static UI mockup.
@@ -1488,11 +1466,13 @@ npm run dev       # Starts Vite local development server
 In response to the comprehensive Production Readiness Audit (October 2026), the codebase was audited and hardened with the following verified architectural and security fixes:
 
 ### 1. Security Containment & Privilege Escalation (P0 Resolved)
+
 - **Eliminated Signup Privilege Escalation**: Patched `public.handle_new_user()` trigger in `supabase/migrations/20261021000000_fix_privilege_escalation_and_harden_rls.sql`. Any `role` key passed in `raw_user_meta_data` is strictly ignored; all new registrations unconditionally receive the least-privilege `project_owner` role.
 - **Removed Unauthenticated Demo Account Provisioning**: Deleted the unauthenticated `provisionDemoAccounts` server function. Account provisioning is restricted to the protected administrative script `scripts/seed-demo-accounts.ts`, which requires explicit environment confirmation (`ALLOW_DEMO_SEED=true`).
 - **Sanitized Secrets & Git Hygiene**: Removed `.env` from version control tracking, added environment secret patterns to `.gitignore`, and provided a comprehensive `.env.example` template.
 
 ### 2. Verification Workflow & Data Integrity (P0 Resolved)
+
 - **Strict State Machine**: Enforced strict valid status transitions (`DRAFT` → `SUBMITTED` → `UNDER_REVIEW` → `VERIFIED` / `CORRECTION_REQUIRED` / `REJECTED`). Disallowed approving directly from `DRAFT`, `REJECTED`, or `CORRECTION_REQUIRED`.
 - **Atomic Database Transactions**: Created `public.perform_verification_decision` stored procedure executing status update, review log, carbon impact, durable audit log, timeline event, and notifications within a single atomic PostgreSQL transaction.
 - **Optimistic Concurrency Control**: Status transitions enforce optimistic locking on expected status to eliminate concurrent verification race conditions.
@@ -1500,12 +1480,14 @@ In response to the comprehensive Production Readiness Audit (October 2026), the 
 - **Durable Audit Logs**: Audit log failures now throw exceptions rather than failing silently, preventing unrecorded mutations.
 
 ### 3. Real Blockchain Anchoring & Transparency (P0 Resolved)
+
 - **Solidity Smart Contract**: Provided `contracts/BlueCarbonRegistry.sol` for deploying on-chain anchor registries with tamper-evident record hashing and verification events.
 - **Real EVM JSON-RPC Client**: Implemented standard EVM JSON-RPC client in `src/lib/blockchain.server.ts` supporting transaction submission, receipt polling, and block confirmations tracking.
 - **Independent On-Chain Verification**: Added `verifyOnChainAnchor()` and frontend `VerifyChainButton` allowing verifiers and the public to verify receipts directly against RPC nodes.
 - **Explicit Transparency**: The UI and API strictly distinguish simulated records (`simulated: true`, "Simulated Demo Record") from genuine on-chain confirmations ("Live On-Chain Anchor"), never misrepresenting testnet simulations.
 
 ### 4. Scientific Blue Carbon Accounting Methodology (P0 Resolved)
+
 - **IPCC 2013 & Verra VM0033 Standard**: Integrated `src/lib/carbon-methodology.ts` replacing demo coefficients with peer-reviewed scientific parameters (IPCC Coastal Wetlands Supplement Chapter 4 & Verra VM0033).
 - **Carbon Pool Breakdown**: Distinct calculations for Aboveground/Belowground Biomass ($C_{bio}$) and Soil Organic Carbon Accretion ($C_{soc}$).
 - **Mandatory Risk Buffers & Deductions**:
@@ -1516,11 +1498,12 @@ In response to the comprehensive Production Readiness Audit (October 2026), the 
 - **Clear Separation**: Distinguishes Estimated Gross Sequestration from Net Verified Carbon Impact.
 
 ### 5. Evidence Privacy & Upload Validation
+
 - **Secure URL Signing**: `signEvidenceUrls` and `signCommunityUrls` reject arbitrary or external URLs, enforce `storage://` path validation, and verify caller project ownership or verifier authorization.
 - **Upload Validation Engine**: `src/lib/evidence-validator.ts` enforces 25MB file limits, whitelisted MIME types, extension validation, and sanitizes filenames against directory traversal (`../`, `..\`).
 - **Public Privacy Safeguards**: Public lookup endpoints strictly exclude non-public evidence items and redact sensitive personal contact details.
 
 ### 6. Automated Testing & CI/CD Pipeline
+
 - **Comprehensive Test Suite**: Added 25 automated tests across 5 test suites (`tests/**/*.test.ts`) covering security authorization, state transitions, scientific carbon math, evidence upload validation, and blockchain anchoring.
 - **GitHub Actions CI**: Added `.github/workflows/ci.yml` running tests across Node 20, 22, and 24, verifying code formatting, TypeScript type checks, and production builds on every PR.
-

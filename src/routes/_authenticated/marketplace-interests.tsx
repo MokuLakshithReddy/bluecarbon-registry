@@ -123,10 +123,12 @@ function MarketplaceInterestsPage() {
               <select
                 value={row.status}
                 aria-label={`Status for ${row.company_name}`}
-                onChange={(event) => setStatus.mutate({
+                onChange={(event) =>
+                  setStatus.mutate({
                     id: row.id,
                     status: event.target.value as (typeof STATUSES)[number],
-                  })}
+                  })
+                }
                 className="h-9 rounded-lg border border-border bg-card px-3 text-sm"
               >
                 {STATUSES.map((status) => (

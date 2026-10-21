@@ -70,10 +70,7 @@ function MarketplacePage() {
     queryFn: () => fetchProjects(),
   });
 
-  const verified = useMemo(
-    () => projects.filter((p) => p.status === "VERIFIED"),
-    [projects],
-  );
+  const verified = useMemo(() => projects.filter((p) => p.status === "VERIFIED"), [projects]);
 
   const filtered = verified.filter((p) => {
     const haystack = `${p.name} ${p.project_code} ${p.state ?? ""} ${p.district ?? ""} ${
@@ -98,7 +95,9 @@ function MarketplacePage() {
 
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
           <div className="panel p-4">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Verified projects</p>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">
+              Verified projects
+            </p>
             <p className="mt-1 font-display text-2xl font-semibold">{verified.length}</p>
           </div>
           <div className="panel p-4">
@@ -108,7 +107,9 @@ function MarketplacePage() {
             <p className="mt-1 font-display text-2xl font-semibold">{formatTco2e(totalImpact)}</p>
           </div>
           <div className="panel p-4">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Transaction model</p>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">
+              Transaction model
+            </p>
             <p className="mt-1 text-sm font-semibold">Expression of interest only</p>
             <p className="text-xs text-muted-foreground">
               No credits are issued, sold or transferred through this registry.
@@ -161,11 +162,15 @@ function MarketplacePage() {
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <dt className="text-xs uppercase tracking-widest text-muted-foreground">Impact</dt>
+                    <dt className="text-xs uppercase tracking-widest text-muted-foreground">
+                      Impact
+                    </dt>
                     <dd className="font-semibold">{formatTco2e(p.verified_carbon)}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs uppercase tracking-widest text-muted-foreground">Area</dt>
+                    <dt className="text-xs uppercase tracking-widest text-muted-foreground">
+                      Area
+                    </dt>
                     <dd>{formatNumber(p.area_hectares, " ha")}</dd>
                   </div>
                   <div>
@@ -216,11 +221,7 @@ function MarketplacePage() {
         </div>
       </div>
 
-      <InterestDialog
-        target={target}
-        signedIn={!!session}
-        onClose={() => setTarget(null)}
-      />
+      <InterestDialog target={target} signedIn={!!session} onClose={() => setTarget(null)} />
     </PublicLayout>
   );
 }

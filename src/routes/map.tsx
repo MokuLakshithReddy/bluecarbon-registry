@@ -72,7 +72,10 @@ function MapPage() {
         </div>
         <div className="mt-4 flex flex-wrap gap-4">
           {LEGEND.map((item) => (
-            <span key={item.label} className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span
+              key={item.label}
+              className="flex items-center gap-2 text-xs text-muted-foreground"
+            >
               <span className="size-3 rounded-full" style={{ backgroundColor: item.color }} />
               {item.label}
             </span>

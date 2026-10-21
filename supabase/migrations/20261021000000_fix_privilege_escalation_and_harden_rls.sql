@@ -303,3 +303,37 @@ END; $$;
 
 REVOKE EXECUTE ON FUNCTION public.perform_verification_decision FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.perform_verification_decision TO authenticated, service_role;
+
+-- 5. HARDEN PROJECTS RLS: PREVENT MODIFICATION OF VERIFIED PROJECTS BY OWNERS
+-- Project owners may only update their projects while in 'DRAFT' or 'CORRECTION_REQUIRED' status.
+-- Once SUBMITTED, UNDER_REVIEW, VERIFIED, or REJECTED, owners cannot alter the project record.
+DROP POLICY IF EXISTS "owners update own projects" ON public.projects;
+CREATE POLICY "owners update own projects" ON public.projects FOR UPDATE TO authenticated
+  USING (
+    (
+      (owner_id = auth.uid() OR lower(owner_email) = lower(coalesce(auth.jwt()->>'email','')))
+      AND status IN ('DRAFT', 'CORRECTION_REQUIRED')
+    )
+    OR public.has_role(auth.uid(), 'admin')
+  )
+  WITH CHECK (
+    (
+      (owner_id = auth.uid() OR lower(owner_email) = lower(coalesce(auth.jwt()->>'email','')))
+      AND status IN ('DRAFT', 'CORRECTION_REQUIRED', 'SUBMITTED')
+    )
+    OR public.has_role(auth.uid(), 'admin')
+  );
+
+-- 6. IMMUTABILITY OF VERIFICATION AND CARBON IMPACT RECORDS
+DROP POLICY IF EXISTS "review no update" ON public.verification_reviews;
+CREATE POLICY "review no update" ON public.verification_reviews FOR UPDATE TO authenticated USING (false);
+
+DROP POLICY IF EXISTS "review no delete" ON public.verification_reviews;
+CREATE POLICY "review no delete" ON public.verification_reviews FOR DELETE TO authenticated USING (false);
+
+DROP POLICY IF EXISTS "carbon impact no update" ON public.carbon_impact_records;
+CREATE POLICY "carbon impact no update" ON public.carbon_impact_records FOR UPDATE TO authenticated USING (false);
+
+DROP POLICY IF EXISTS "carbon impact no delete" ON public.carbon_impact_records;
+CREATE POLICY "carbon impact no delete" ON public.carbon_impact_records FOR DELETE TO authenticated USING (false);
+

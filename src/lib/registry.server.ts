@@ -11,10 +11,12 @@ import { CARBON_METHODOLOGY_ID } from "./domain.ts";
 import type { PublicProjectPayload, PublicProjectSummary } from "./public-types.ts";
 
 export function publicServerClient() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
+  const url = process.env["SUPABASE_URL"];
+  const key = process.env["SUPABASE_PUBLISHABLE_KEY"];
   if (!url || !key) {
-    throw new Error("Missing Supabase configuration in environment (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY).");
+    throw new Error(
+      "Missing Supabase configuration in environment (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY).",
+    );
   }
 
   return createClient<Database>(url, key, {
@@ -41,7 +43,9 @@ export async function fetchPublicProject(code: string): Promise<PublicProjectPay
 
   // Filter out any evidence items not marked as public
   if (payload.evidence && Array.isArray(payload.evidence)) {
-    payload.evidence = payload.evidence.filter((e) => (e as { is_public?: boolean }).is_public !== false);
+    payload.evidence = payload.evidence.filter(
+      (e) => (e as { is_public?: boolean }).is_public !== false,
+    );
   }
 
   // Sign URLs only for approved public evidence
@@ -51,7 +55,9 @@ export async function fetchPublicProject(code: string): Promise<PublicProjectPay
       const match = item.file_url.match(EVIDENCE_STORAGE_REGEX);
       if (match) {
         const storagePath = `${match[1]}/${match[2]}`;
-        const { data: signed } = await admin.storage.from("evidence").createSignedUrl(storagePath, 3600);
+        const { data: signed } = await admin.storage
+          .from("evidence")
+          .createSignedUrl(storagePath, 3600);
         item.file_url = signed?.signedUrl ?? null;
       } else {
         item.file_url = null;
@@ -100,6 +106,10 @@ export async function signEvidenceUrls(urls: string[], auth?: AuthContext) {
 
     const projectId = match[1];
     const filePath = match[2];
+    if (!projectId || !filePath) {
+      out[url] = null;
+      continue;
+    }
 
     // If auth context is provided, enforce project ownership or verifier role
     if (auth) {
@@ -112,13 +122,17 @@ export async function signEvidenceUrls(urls: string[], auth?: AuthContext) {
 
     const storagePath = `${projectId}/${filePath}`;
     const { data, error } = await admin.storage.from("evidence").createSignedUrl(storagePath, 3600);
-    out[url] = error ? null : data?.signedUrl ?? null;
+    out[url] = error ? null : (data?.signedUrl ?? null);
   }
 
   return out;
 }
 
-async function checkProjectAccess(supabase: VerifierClient, userId: string, projectId: string): Promise<boolean> {
+async function checkProjectAccess(
+  supabase: VerifierClient,
+  userId: string,
+  projectId: string,
+): Promise<boolean> {
   // Check if verifier or admin
   const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", userId);
   const userRoles = (roles ?? []).map((r) => r.role);
@@ -151,7 +165,9 @@ async function assertVerifier(supabase: VerifierClient, userId: string) {
   if (error) throw new Error(`Role verification failed: ${error.message}`);
   const roles = (data ?? []).map((r) => r.role);
   if (!roles.includes("verifier") && !roles.includes("admin")) {
-    throw new Error("Unauthorized: Only authorized NCCR verifiers or administrators can record verification decisions.");
+    throw new Error(
+      "Unauthorized: Only authorized NCCR verifiers or administrators can record verification decisions.",
+    );
   }
 }
 
@@ -242,7 +258,9 @@ export async function startReview(input: DecisionInput) {
 
   if (updateError) throw new Error(`Failed to update project status: ${updateError.message}`);
   if (!updated || updated.length === 0) {
-    throw new Error("Concurrency conflict: The project was modified by another user. Please refresh and try again.");
+    throw new Error(
+      "Concurrency conflict: The project was modified by another user. Please refresh and try again.",
+    );
   }
 
   await logEvent(input.supabase, {
@@ -281,15 +299,25 @@ export async function approveProject(input: DecisionInput) {
   const verifiedAt = new Date().toISOString();
 
   // 1. Try atomic database procedure if available
-  const { data: atomicResult, error: rpcError } = await input.supabase.rpc("perform_verification_decision", {
-    _project_id: project.id,
-    _decision: "APPROVE",
-    _comments: input.comments ?? null,
-    _confirmed_carbon: verifiedCarbon,
-    _verifier_id: input.userId,
-    _verifier_email: input.verifierEmail,
-    _expected_status: "UNDER_REVIEW",
-  });
+  const supabaseWithRpc = input.supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+  const { data: _atomicResult, error: rpcError } = await supabaseWithRpc.rpc(
+    "perform_verification_decision",
+
+    {
+      _project_id: project.id,
+      _decision: "APPROVE",
+      _comments: input.comments ?? null,
+      _confirmed_carbon: verifiedCarbon,
+      _verifier_id: input.userId,
+      _verifier_email: input.verifierEmail,
+      _expected_status: "UNDER_REVIEW",
+    },
+  );
 
   if (rpcError) {
     // If stored procedure is not yet applied, fallback to coordinated safe updates with error checks
@@ -311,7 +339,9 @@ export async function approveProject(input: DecisionInput) {
 
     if (updateError) throw new Error(`Verification update failed: ${updateError.message}`);
     if (!updated || updated.length === 0) {
-      throw new Error("Concurrency conflict: Project status was modified concurrently. Please refresh.");
+      throw new Error(
+        "Concurrency conflict: Project status was modified concurrently. Please refresh.",
+      );
     }
 
     const { error: revError } = await input.supabase.from("verification_reviews").insert({
@@ -407,12 +437,16 @@ export async function approveProject(input: DecisionInput) {
 export async function requestCorrection(input: DecisionInput) {
   await assertVerifier(input.supabase, input.userId);
   if (!input.comments?.trim() || input.comments.trim().length < 5) {
-    throw new Error("Verifier comments (minimum 5 characters) are required to request a correction.");
+    throw new Error(
+      "Verifier comments (minimum 5 characters) are required to request a correction.",
+    );
   }
 
   const project = await loadProject(input.supabase, input.projectId);
   if (project.status !== "UNDER_REVIEW") {
-    throw new Error(`Cannot request correction: Project status is '${project.status}', expected 'UNDER_REVIEW'.`);
+    throw new Error(
+      `Cannot request correction: Project status is '${project.status}', expected 'UNDER_REVIEW'.`,
+    );
   }
 
   const { data: updated, error: updateError } = await input.supabase

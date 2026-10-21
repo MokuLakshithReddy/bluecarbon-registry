@@ -4,6 +4,7 @@ import {
   calculateScientificCarbon,
   SCIENTIFIC_CARBON_COEFFICIENTS,
   METHODOLOGY_SPEC,
+  REFERENCE_BENCHMARKS,
 } from "../../src/lib/carbon-methodology.ts";
 
 test("Carbon Methodology: IPCC coefficients are scientifically defined for all ecosystems", () => {
@@ -40,7 +41,7 @@ test("Carbon Methodology: Mangrove calculation applies biomass survival and soil
   // Non-permanence buffer withholding (15%)
   assert.ok(result.riskBufferDeductionTco2e > 0);
   assert.ok(
-    Math.abs(result.riskBufferDeductionTco2e - (result.grossSequestrationTco2e * 0.15)) <= 0.1,
+    Math.abs(result.riskBufferDeductionTco2e - result.grossSequestrationTco2e * 0.15) <= 0.1,
   );
 
   // Net verified carbon must be strictly less than gross sequestration due to risk buffer and uncertainty
@@ -89,4 +90,31 @@ test("Carbon Methodology: Tier 2 site sampling reduces scientific uncertainty di
 
   assert.ok(tier2.uncertaintyDiscountTco2e < tier1.uncertaintyDiscountTco2e);
   assert.ok(tier2.netVerifiedTco2e >= tier1.netVerifiedTco2e);
+});
+
+test("Carbon Methodology: Reference benchmarks (Sundarbans, Pichavaram, Chilika) validate against published ranges", () => {
+  assert.strictEqual(REFERENCE_BENCHMARKS.length, 3);
+
+  for (const benchmark of REFERENCE_BENCHMARKS) {
+    const calc = calculateScientificCarbon({
+      ecosystem: benchmark.ecosystem,
+      areaHectares: benchmark.areaHectares,
+      restorationStartDate: benchmark.restorationStartDate,
+      restorationEndDate: benchmark.restorationEndDate,
+      survivalRate: benchmark.survivalRate,
+      salinityPpt: benchmark.salinityPpt,
+    });
+
+    assert.ok(
+      calc.grossSequestrationTco2e >= benchmark.expectedGrossRange[0] &&
+        calc.grossSequestrationTco2e <= benchmark.expectedGrossRange[1],
+      `${benchmark.name} gross sequestration ${calc.grossSequestrationTco2e} within published range [${benchmark.expectedGrossRange[0]}, ${benchmark.expectedGrossRange[1]}]`,
+    );
+
+    assert.ok(
+      calc.netVerifiedTco2e >= benchmark.expectedNetVerifiedRange[0] &&
+        calc.netVerifiedTco2e <= benchmark.expectedNetVerifiedRange[1],
+      `${benchmark.name} net verified carbon ${calc.netVerifiedTco2e} within empirical range [${benchmark.expectedNetVerifiedRange[0]}, ${benchmark.expectedNetVerifiedRange[1]}]`,
+    );
+  }
 });

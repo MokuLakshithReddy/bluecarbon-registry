@@ -21,15 +21,7 @@ export const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
 ]);
 
-export const ALLOWED_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-  "tif",
-  "tiff",
-  "pdf",
-]);
+export const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "tif", "tiff", "pdf"]);
 
 export interface EvidenceValidationResult {
   valid: boolean;
@@ -65,7 +57,11 @@ export function validateEvidenceUpload(file: {
 
   // File size check
   if (file.size <= 0) {
-    return { valid: false, sanitizedFilename: sanitized, error: "Uploaded file is empty (0 bytes)" };
+    return {
+      valid: false,
+      sanitizedFilename: sanitized,
+      error: "Uploaded file is empty (0 bytes)",
+    };
   }
   if (file.size > MAX_EVIDENCE_SIZE_BYTES) {
     return {
@@ -98,9 +94,13 @@ export function validateEvidenceUpload(file: {
 }
 
 /** Validates that a storage URI strictly conforms to the expected project evidence path pattern. */
-export function validateStorageUri(uri: string): { valid: boolean; projectId?: string; filename?: string } {
+export function validateStorageUri(uri: string): {
+  valid: boolean;
+  projectId?: string | undefined;
+  filename?: string | undefined;
+} {
   const match = uri.match(/^storage:\/\/evidence\/([0-9a-fA-F-]{36})\/([a-zA-Z0-9._-]+)$/);
-  if (!match) return { valid: false };
+  if (!match || !match[1] || !match[2]) return { valid: false };
 
   return {
     valid: true,

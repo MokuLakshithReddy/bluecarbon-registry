@@ -10,12 +10,7 @@ export const CARBON_DISCLAIMER =
   "Carbon impact shown by this MVP is an estimated/verified project impact value for demonstration. Actual carbon-credit issuance requires an approved methodology, authorized verification and the applicable regulatory/registry process.";
 
 export type ProjectStatus =
-  | "DRAFT"
-  | "SUBMITTED"
-  | "UNDER_REVIEW"
-  | "CORRECTION_REQUIRED"
-  | "VERIFIED"
-  | "REJECTED";
+  "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "CORRECTION_REQUIRED" | "VERIFIED" | "REJECTED";
 
 export type Ecosystem = "MANGROVE" | "SEAGRASS" | "SALT_MARSH" | "COASTAL_WETLAND" | "OTHER";
 

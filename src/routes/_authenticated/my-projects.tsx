@@ -58,7 +58,11 @@ function MyProjectsPage() {
       }
     >
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Projects" value={projects.length} icon={<FolderKanban className="size-4" />} />
+        <StatCard
+          label="Projects"
+          value={projects.length}
+          icon={<FolderKanban className="size-4" />}
+        />
         <StatCard
           label="Verified"
           value={verified.length}

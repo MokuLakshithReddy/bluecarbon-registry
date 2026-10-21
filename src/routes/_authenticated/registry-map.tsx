@@ -7,7 +7,11 @@ export const Route = createFileRoute("/_authenticated/registry-map")({
   head: () => ({
     meta: [
       { title: "Registry Map · BlueCarbon MRV Registry" },
-      { name: "description", content: "Geospatial view of every registered blue-carbon restoration site along India's coastline, coloured by verification status." },
+      {
+        name: "description",
+        content:
+          "Geospatial view of every registered blue-carbon restoration site along India's coastline, coloured by verification status.",
+      },
       { property: "og:title", content: "Registry Map · BlueCarbon MRV Registry" },
       { property: "og:description", content: "Map of all registered restoration sites." },
       { property: "og:type", content: "website" },
@@ -35,7 +39,10 @@ function RegistryMapPage() {
     }));
 
   return (
-    <AppShell title="Registry map" description="All restoration sites, including drafts and submissions under review.">
+    <AppShell
+      title="Registry map"
+      description="All restoration sites, including drafts and submissions under review."
+    >
       <MapPanel height={620} markers={markers} center={[15.5, 79.5]} zoom={5} />
     </AppShell>
   );

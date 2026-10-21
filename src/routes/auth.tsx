@@ -76,8 +76,8 @@ function AuthPage() {
             Capture → Validate → Verify → Record → Prove
           </h2>
           <p className="mt-4 text-sm text-navy-foreground/80">
-            A trusted digital MRV and registry system connecting field evidence, automated validation, human
-            NCCR verification, tamper-evident records and verified carbon impact.
+            A trusted digital MRV and registry system connecting field evidence, automated
+            validation, human NCCR verification, tamper-evident records and verified carbon impact.
           </p>
           <ul className="mt-6 space-y-2 text-sm text-navy-foreground/80">
             <li>· Role-based access for project owners and government verifiers</li>
@@ -99,8 +99,8 @@ function AuthPage() {
           </div>
           <h1 className="font-display text-2xl font-semibold">Registry access</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Project owners register and monitor projects. NCCR verifiers review and verify submissions. Public
-            verification needs no login.
+            Project owners register and monitor projects. NCCR verifiers review and verify
+            submissions. Public verification needs no login.
           </p>
 
           <div className="panel mt-6 space-y-3 p-4">
@@ -166,7 +166,11 @@ function AuthPage() {
   );
 }
 
-function SignInForm({ onSubmit }: { onSubmit: (email: string, password: string) => Promise<void> }) {
+function SignInForm({
+  onSubmit,
+}: {
+  onSubmit: (email: string, password: string) => Promise<void>;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -294,12 +298,16 @@ function SignUpForm() {
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="su-phone">Contact phone</Label>
-          <Input id="su-phone" value={form.phone} onChange={(event) => update("phone", event.target.value)} />
+          <Input
+            id="su-phone"
+            value={form.phone}
+            onChange={(event) => update("phone", event.target.value)}
+          />
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        New accounts are created with the Project Owner role. NCCR verifier access is granted by a registry
-        administrator.
+        New accounts are created with the Project Owner role. NCCR verifier access is granted by a
+        registry administrator.
       </p>
       <Button type="submit" className="w-full" disabled={busy}>
         {busy ? <Loader2 className="size-4 animate-spin" /> : null} Create account

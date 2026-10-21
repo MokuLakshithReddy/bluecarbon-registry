@@ -73,8 +73,8 @@ export function RiskPanel({ result }: { result: ScreeningResult }) {
       <div className="mt-4 flex gap-2 rounded-lg border border-border bg-secondary/60 p-3 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-ocean" />
         <p>
-          {result.summary} Screening is rule-based and deterministic — it assists but never replaces the
-          human/NCCR verification decision.
+          {result.summary} Screening is rule-based and deterministic — it assists but never replaces
+          the human/NCCR verification decision.
         </p>
       </div>
     </div>
@@ -136,7 +136,8 @@ export function CarbonMethodologyPanel({
         <div className="rounded-lg bg-secondary/50 p-3 space-y-1">
           <p className="font-semibold text-foreground">Mandatory Deductions &amp; Buffer</p>
           <p className="text-muted-foreground">
-            Non-Permanence Buffer (15%): -{assessment.riskBufferDeductionTco2e.toLocaleString()} tCO₂e
+            Non-Permanence Buffer (15%): -{assessment.riskBufferDeductionTco2e.toLocaleString()}{" "}
+            tCO₂e
           </p>
           <p className="text-muted-foreground">
             Uncertainty Discount: -{assessment.uncertaintyDiscountTco2e.toLocaleString()} tCO₂e
@@ -151,7 +152,8 @@ export function CarbonMethodologyPanel({
         <BookOpen className="mt-0.5 size-4 shrink-0 text-primary" />
         <p>
           <span className="font-semibold text-foreground">Scientific Reference: </span>
-          {assessment.citation}. Calculated over {assessment.durationYears} year(s) with {assessment.survivalRatePercent}% survival factor.
+          {assessment.citation}. Calculated over {assessment.durationYears} year(s) with{" "}
+          {assessment.survivalRatePercent}% survival factor.
         </p>
       </div>
     </div>

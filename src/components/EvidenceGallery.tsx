@@ -16,10 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 export function useEvidenceUrls(items: Pick<EvidenceRow, "file_url">[]) {
   const sign = useServerFn(getSignedEvidenceUrls);
-  const urls = useMemo(
-    () => items.map((i) => i.file_url).filter((u): u is string => !!u),
-    [items],
-  );
+  const urls = useMemo(() => items.map((i) => i.file_url).filter((u): u is string => !!u), [items]);
   const needsSigning = urls.some((u) => u.startsWith("storage://"));
   const { data } = useQuery({
     queryKey: ["evidence-urls", urls],
@@ -66,7 +63,9 @@ export function EvidenceGallery({
   }
 
   const isImage = (item: EvidenceRow) =>
-    /\.(png|jpe?g|webp|gif|avif)$/i.test(item.file_name) || item.evidence_type === "FIELD_PHOTO" || item.evidence_type === "DRONE_IMAGERY";
+    /\.(png|jpe?g|webp|gif|avif)$/i.test(item.file_name) ||
+    item.evidence_type === "FIELD_PHOTO" ||
+    item.evidence_type === "DRONE_IMAGERY";
 
   return (
     <>
@@ -85,7 +84,12 @@ export function EvidenceGallery({
             >
               <div className="flex h-36 items-center justify-center overflow-hidden bg-secondary">
                 {url && isImage(item) ? (
-                  <img src={url} alt={item.file_name} loading="lazy" className="size-full object-cover" />
+                  <img
+                    src={url}
+                    alt={item.file_name}
+                    loading="lazy"
+                    className="size-full object-cover"
+                  />
                 ) : (
                   <FileText className="size-8 text-muted-foreground" />
                 )}
@@ -100,11 +104,13 @@ export function EvidenceGallery({
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {EVIDENCE_TYPE_LABEL[item.evidence_type] ?? item.evidence_type} · {formatDate(item.capture_date)}
+                  {EVIDENCE_TYPE_LABEL[item.evidence_type] ?? item.evidence_type} ·{" "}
+                  {formatDate(item.capture_date)}
                 </p>
                 {item.latitude != null && item.longitude != null ? (
                   <p className="flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                    <MapPin className="size-3" /> {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
+                    <MapPin className="size-3" /> {item.latitude.toFixed(4)},{" "}
+                    {item.longitude.toFixed(4)}
                   </p>
                 ) : null}
               </div>
@@ -207,7 +213,9 @@ export function EvidenceGallery({
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[0.65rem] font-semibold uppercase tracking-widest text-muted-foreground">{label}</dt>
+      <dt className="text-[0.65rem] font-semibold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </dt>
       <dd className="mt-0.5 text-foreground">{value}</dd>
     </div>
   );

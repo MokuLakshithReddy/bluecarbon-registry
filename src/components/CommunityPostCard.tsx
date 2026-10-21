@@ -13,9 +13,7 @@ export function useCommunityUrls(items: { media_url: string | null }[]) {
   const sign = useServerFn(getSignedCommunityUrls);
   const urls = useMemo(
     () =>
-      items
-        .map((i) => i.media_url)
-        .filter((u): u is string => !!u && u.startsWith(STORAGE_PREFIX)),
+      items.map((i) => i.media_url).filter((u): u is string => !!u && u.startsWith(STORAGE_PREFIX)),
     [items],
   );
   const { data } = useQuery({

@@ -7,10 +7,18 @@ export interface TimelineEvent {
   actor_email?: string | null;
 }
 
-export function TimelinePanel({ events, title = "Project Status Timeline" }: { events: TimelineEvent[]; title?: string }) {
+export function TimelinePanel({
+  events,
+  title = "Project Status Timeline",
+}: {
+  events: TimelineEvent[];
+  title?: string;
+}) {
   return (
     <div className="panel p-5">
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        {title}
+      </p>
       {events.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">No timeline events recorded yet.</p>
       ) : (
@@ -27,7 +35,9 @@ export function TimelinePanel({ events, title = "Project Status Timeline" }: { e
                   {formatDate(event.created_at)}
                   {event.actor_email ? ` · ${event.actor_email}` : ""}
                 </p>
-                {event.detail ? <p className="mt-1 text-xs text-muted-foreground">{event.detail}</p> : null}
+                {event.detail ? (
+                  <p className="mt-1 text-xs text-muted-foreground">{event.detail}</p>
+                ) : null}
               </div>
             </li>
           ))}

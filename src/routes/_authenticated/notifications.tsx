@@ -62,13 +62,20 @@ function NotificationsPage() {
       title="Notifications"
       description="Status changes and verifier messages relating to projects you can access."
       actions={
-        <Button variant="outline" size="sm" onClick={() => markAll.mutate()} disabled={markAll.isPending}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => markAll.mutate()}
+          disabled={markAll.isPending}
+        >
           <CheckCheck className="size-4" /> Mark all read
         </Button>
       }
     >
       <div className="panel divide-y divide-border">
-        {isLoading ? <p className="p-5 text-sm text-muted-foreground">Loading notifications…</p> : null}
+        {isLoading ? (
+          <p className="p-5 text-sm text-muted-foreground">Loading notifications…</p>
+        ) : null}
         {items.map((item) => (
           <article key={item.id} className="flex gap-3 p-4">
             <span
@@ -80,7 +87,9 @@ function NotificationsPage() {
             </span>
             <div className="min-w-0">
               <p className="text-sm font-semibold">{item.title}</p>
-              {item.body ? <p className="mt-0.5 text-sm text-muted-foreground">{item.body}</p> : null}
+              {item.body ? (
+                <p className="mt-0.5 text-sm text-muted-foreground">{item.body}</p>
+              ) : null}
               <p className="mt-1 text-xs text-muted-foreground">{formatDate(item.created_at)}</p>
             </div>
           </article>

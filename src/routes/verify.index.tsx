@@ -64,7 +64,8 @@ function VerifyLookupPage() {
             <ScanLine className="size-4" /> Verify project
           </Button>
           <p className="text-xs text-muted-foreground">
-            Scanning a registry QR certificate with a phone camera opens this verification page directly.
+            Scanning a registry QR certificate with a phone camera opens this verification page
+            directly.
           </p>
         </form>
 
