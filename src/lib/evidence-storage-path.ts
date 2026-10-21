@@ -25,15 +25,13 @@
  */
 
 /** Canonical storage URI format: storage://evidence/<project-uuid>/<filename> */
-export const EVIDENCE_STORAGE_REGEX =
-  /^storage:\/\/evidence\/([0-9a-fA-F-]{36})\/(.+)$/;
+export const EVIDENCE_STORAGE_REGEX = /^storage:\/\/evidence\/([0-9a-fA-F-]{36})\/(.+)$/;
 
 /**
  * RFC 4122 UUID shape — 8-4-4-4-12 hex groups separated by hyphens.
  * Exactly 36 characters (32 hex + 4 hyphens).
  */
-const UUID_REGEX =
-  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 /** Returned by resolveEvidenceStoragePath. */
 export interface StoragePathResult {
@@ -56,14 +54,14 @@ function containsTraversal(raw: string): boolean {
 
   const encodedPatterns = [
     "%2e%2e", // %2e%2e → ..
-    "%2e.",   // %2e.  → ..
-    ".%2e",   // .%2e  → ..
-    "%2f",    // %2f   → /
-    "%5c",    // %5c   → \
-    "%00",    // %00   → NUL
-    "%252e",  // %252e → double-encoded .
-    "%252f",  // %252f → double-encoded /
-    "%255c",  // %255c → double-encoded \
+    "%2e.", // %2e.  → ..
+    ".%2e", // .%2e  → ..
+    "%2f", // %2f   → /
+    "%5c", // %5c   → \
+    "%00", // %00   → NUL
+    "%252e", // %252e → double-encoded .
+    "%252f", // %252f → double-encoded /
+    "%255c", // %255c → double-encoded \
   ];
 
   for (const pattern of encodedPatterns) {
@@ -128,8 +126,7 @@ export function resolveEvidenceStoragePath(
     trimmed.startsWith("http://") ||
     trimmed.startsWith("https://") ||
     trimmed.startsWith("data:") ||
-    (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) &&
-      !trimmed.startsWith("storage://"))
+    (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) && !trimmed.startsWith("storage://"))
   ) {
     return reject(
       `Evidence record "${evidenceName}" references an unsupported external URL format ("${trimmed}"). Evidence must reside in approved object storage.`,

@@ -8,10 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { anchorVerifiedRecord, type AnchorPayload } from "./blockchain.server.ts";
 import { CARBON_METHODOLOGY_ID } from "./domain.ts";
-import {
-  EVIDENCE_STORAGE_REGEX,
-  resolveEvidenceStoragePath,
-} from "./evidence-storage-path.ts";
+import { EVIDENCE_STORAGE_REGEX, resolveEvidenceStoragePath } from "./evidence-storage-path.ts";
 import { verifyEvidenceProvenance } from "./evidence-validator.ts";
 import type { PublicProjectPayload, PublicProjectSummary } from "./public-types.ts";
 

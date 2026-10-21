@@ -91,7 +91,9 @@ test("Traversal: <project>/./file.pdf — single dot segment — is rejected", (
 
 test("Traversal: <project>// — empty segment from double slash — is rejected", () => {
   const err = rejected(`storage://evidence/${PROJECT_A}//file.pdf`);
-  assert.ok(err.includes("traversal") || err.includes("segment") || err.includes("does not resolve"));
+  assert.ok(
+    err.includes("traversal") || err.includes("segment") || err.includes("does not resolve"),
+  );
 });
 
 // ─── Section 4: Percent-encoded traversal ────────────────────────────────────
@@ -208,7 +210,10 @@ test("Scheme: javascript: URI is rejected", () => {
   // No :// so it passes the scheme guard — it is a relative path whose first
   // segment "javascript:alert(1)" does not match the project UUID.
   assert.ok(err !== null, "Expected rejection for javascript: URI");
-  assert.strictEqual(resolveEvidenceStoragePath("javascript:alert(1)", PROJECT_A, "e").storagePath, null);
+  assert.strictEqual(
+    resolveEvidenceStoragePath("javascript:alert(1)", PROJECT_A, "e").storagePath,
+    null,
+  );
 });
 
 test("Scheme: storage:// URI pointing to a different bucket is rejected", () => {
@@ -232,11 +237,7 @@ test("Empty: whitespace-only string is rejected", () => {
 
 test("Unresolvable: storage:// URI with empty filename segment is rejected", () => {
   // EVIDENCE_STORAGE_REGEX requires (.+) so trailing slash won't match.
-  const r = resolveEvidenceStoragePath(
-    `storage://evidence/${PROJECT_A}/`,
-    PROJECT_A,
-    "e",
-  );
+  const r = resolveEvidenceStoragePath(`storage://evidence/${PROJECT_A}/`, PROJECT_A, "e");
   assert.strictEqual(r.storagePath, null);
   assert.ok(r.error !== null);
 });
