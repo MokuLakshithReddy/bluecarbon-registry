@@ -204,7 +204,13 @@ export function readEvmConfig(): EvmConfig | null {
   if (!rpcUrl || !contract) return null;
 
   const rawChainId = process.env["BLOCKCHAIN_CHAIN_ID"];
-  const expectedChainId = rawChainId ? Number(rawChainId) : undefined;
+  if (!rawChainId || Number.isNaN(Number(rawChainId)) || Number(rawChainId) <= 0) {
+    throw new Error(
+      "BLOCKCHAIN_CHAIN_ID environment variable is strictly required for real EVM anchoring mode.",
+    );
+  }
+
+  const expectedChainId = Number(rawChainId);
 
   return {
     rpcUrl,

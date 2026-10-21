@@ -125,14 +125,14 @@ export async function issueDurableSiweNonce(
 ): Promise<string> {
   const nonce = issueSiweNonce(boundAddress);
   if (supabaseClient) {
-    try {
-      await supabaseClient.from("siwe_nonces").insert({
-        nonce,
-        bound_address: boundAddress ? boundAddress.toLowerCase() : null,
-        expires_at: new Date(Date.now() + NONCE_TTL_MS).toISOString(),
-      });
-    } catch {
-      // Memory fallback handles standalone/isolated operation
+    const res = (await supabaseClient.from("siwe_nonces").insert({
+      nonce,
+      bound_address: boundAddress ? boundAddress.toLowerCase() : null,
+      expires_at: new Date(Date.now() + NONCE_TTL_MS).toISOString(),
+    })) as { error?: unknown };
+
+    if (res && res.error) {
+      throw new Error(`Failed to persist SIWE nonce durably: ${JSON.stringify(res.error)}`);
     }
   }
   return nonce;
@@ -141,6 +141,7 @@ export async function issueDurableSiweNonce(
 /**
  * Atomically consumes a server nonce in PostgreSQL (public.consume_siwe_nonce) to prevent replay
  * attacks across multiple serverless/container instances.
+ * Fails closed if the database call returns an error when supabaseClient is supplied.
  */
 export async function consumeDurableSiweNonce(
   supabaseClient:
@@ -153,17 +154,17 @@ export async function consumeDurableSiweNonce(
   address?: string,
 ): Promise<boolean> {
   if (supabaseClient) {
-    try {
-      const { data, error } = await supabaseClient.rpc("consume_siwe_nonce", {
-        p_nonce: nonce,
-        p_address: address ?? "",
-      });
-      if (!error && typeof data === "boolean") {
-        return data;
-      }
-    } catch {
-      // Memory fallback handles standalone/isolated operation
+    const { data, error } = await supabaseClient.rpc("consume_siwe_nonce", {
+      p_nonce: nonce,
+      p_address: address ?? "",
+    });
+    if (error) {
+      throw new Error(`Failed to consume durable SIWE nonce: ${JSON.stringify(error)}`);
     }
+    if (typeof data === "boolean") {
+      return data;
+    }
+    return false;
   }
   return consumeSiweNonce(nonce, address);
 }
