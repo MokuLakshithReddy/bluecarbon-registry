@@ -336,24 +336,30 @@ node --experimental-strip-types --test tests/verification/*.test.ts
 node --experimental-strip-types --test tests/scientific/*.test.ts
 ```
 
-**Test count: 142 passing, 0 failing**
+**Test count: 163 passing, 0 failing**
 
 | Suite                                               | Tests | Coverage                                                                |
 | --------------------------------------------------- | ----- | ----------------------------------------------------------------------- |
-| `blockchain/`                                       | 20    | Real EVM provider, receipt verification, event parsing, precision, RPC chain ID / bytecode validation |
+| `blockchain/`                                       | 25    | Real EVM provider, receipt verification, credit batch minting, 15% buffer pool, irreversible retirement, timelocks, RPC failover |
 | `deployment/smoke-test-resilience.test.ts`          | 4     | Wrong-chain ID, missing contract bytecode, malformed RPC, RPC timeout   |
 | `evidence/evidence-security.test.ts`                | 6     | Upload validation, URI validation, SHA-256, provenance                  |
 | `evidence/cross-project-binding.test.ts`            | 34    | Cross-project path binding, traversal hardening, all attack vectors     |
 | `evidence/evidence-e2e.test.ts`                     | 6     | Storage download, SHA-256 integrity, tamper detection, fail-closed      |
+| `evidence/telemetry-crypto.test.ts`                 | 2     | IoT sensor & drone telemetry ECDSA signatures, tamper detection         |
+| `evidence/decentralized-storage.test.ts`            | 4     | IPFS CIDv0/v1, Arweave Tx IDs, multihash integrity, gateway failover    |
 | `scientific/carbon-methodology.test.ts`             | 9     | IPCC coefficients, 5.42 methane, Tier 1/2/3 evidence enforcement & downgrade, benchmarks, date checks |
 | `security/auth-privilege-escalation.test.ts`        | 5     | Signup trigger guards, ownership isolation, verifier immutability       |
 | `security/database-integration.test.ts`             | 14    | Real PGlite migrations, RLS enforcement, outbox leases, identity binds  |
 | `security/secret-audit-canary.test.ts`              | 2     | Secret audit canary verification, fail-closed git history inspection    |
+| `security/siwe-authentication.test.ts`              | 2     | EIP-4361 SIWE signature parsing, domain/chain validation, anti-replay  |
 | `security/storage-and-public-exposure.test.ts`      | 3     | Fail-closed public evidence, community media auth, demo gating          |
 | `security/threat-model-audit.test.ts`               | 7     | State machine abuse, IDOR prevention, negative/NaN input bounds         |
+| `validation/geo-boundary-validation.test.ts`        | 3     | Coastal biome bounding, ray-casting containment, territorial overlap collision check |
+| `validation/multispectral-validation.test.ts`       | 2     | Optical/radar indices Zod schema (NDVI, EVI, canopy), physiological rate spike check |
 | `validation/validation-engine.test.ts`              | 4     | Haversine distance, EQS quality scoring, duplicate file detection       |
 | `verification/state-machine.test.ts`                | 9     | State machine, fail-closed provenance, worker recovery, compound errors |
 | `verification/crash-recovery-concurrency.test.ts`   | 2     | Worker crashes, lease reclamation, idempotent confirmations             |
+| `compliance/kyc-compliance.test.ts`                 | 3     | Institutional KYC/AML gating, retail limits, FATF/OFAC sanction check   |
 | `quality/accessibility-performance-privacy.test.ts` | 4     | 1,000 calcs < 50ms, PII redaction, WCAG AA contrast/semantics           |
 
 Type-check:
