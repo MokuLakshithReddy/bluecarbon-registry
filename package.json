@@ -1,5 +1,11 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "bluecarbon-registry",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MokuLakshithReddy/bluecarbon-registry.git"
+  },
   "private": true,
   "sideEffects": false,
   "type": "module",

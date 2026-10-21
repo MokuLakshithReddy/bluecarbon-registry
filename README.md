@@ -1,10 +1,12 @@
 # BlueCarbon Registry
 
-[![CI Pipeline](https://github.com/moes-bluecarbon/bluecarbon-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/moes-bluecarbon/bluecarbon-registry/actions/workflows/ci.yml)
+[![CI Pipeline](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml)
+[![Branch Protection](https://img.shields.io/badge/branch%20protection-main%20enforced-success)](https://github.com/MokuLakshithReddy/bluecarbon-registry/branches)
+[![Tests Passing](https://img.shields.io/badge/tests-173%20passed-brightgreen)](tests)
 ![Node.js Version](https://img.shields.io/badge/node.js-%E2%89%A5%2022.0.0-brightgreen)
 ![TypeScript](https://img.shields.io/badge/typescript-v5.8-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-prettier-ff69b4)
-![License](https://img.shields.io/badge/license-Private%20%2F%20MoES-lightgrey)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 > **Trusted Monitoring, Reporting & Verification (MRV) for India's Blue Carbon Ecosystems**
 >
@@ -38,6 +40,7 @@
   - [Testing & Quality Gates](#testing--quality-gates)
   - [Production Readiness Audit & Remediations](#production-readiness-audit--remediations)
 - [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -192,7 +195,7 @@ Deep-dive architecture specifications, security reviews, and operational runbook
 Clone the repository and install dependencies using reproducible lockfile installation:
 
 ```bash
-git clone https://github.com/moes-bluecarbon/bluecarbon-registry.git
+git clone https://github.com/MokuLakshithReddy/bluecarbon-registry.git
 cd bluecarbon-registry
 npm ci
 ```
@@ -447,6 +450,11 @@ During system hardening, 16 findings identified across security, database isolat
 14. **Fail-Closed Live DB RPC Verification:** Database validation script enforces exact expected PostgreSQL error codes (`42501`, `P0001`, `PGRST301`).
 15. **Outbox Completion Trust Boundary:** Restricted `complete_outbox_job` execution exclusively to PostgreSQL `service_role`.
 16. **EVM Network Identity Enforcement:** Mandatory `BLOCKCHAIN_CHAIN_ID` checks against `eth_chainId` during RPC provider initialization.
+17. **Ownership & Governance Invariant Hardening:** `transferOwnership` and `executeAdminAction(AdminActionType.TRANSFER_OWNERSHIP)` revoke previous-owner administrative and verifier permissions. Enforced timelock cannot be bypassed immediately; disabling it requires a scheduled 2-day queued action.
+18. **Durable SIWE Nonce & KYC Limit Persistence:** Replaced process-local stores with PostgreSQL-backed persistence (`siwe_nonces` and `kyc_compliance_transactions`), providing atomic single-use nonce consumption and rolling 365-day cumulative volume enforcement across distributed worker instances.
+19. **Unified EVM Identity & Contract Validation:** Standardized chain ID, bytecode deployment, and confirmation checks across transaction anchoring, public verification, and disaster recovery via `validateEVMNetworkAndContract`.
+20. **Crash Recovery & Concurrency Verification:** Validated `FOR UPDATE SKIP LOCKED` mutually exclusive job claiming, post-mining crash self-healing, duplicate event deduplication, and nested compound error handling.
+21. **Automated CI Release Gates & Branch Protection:** Configured multi-stage release gates and branch protection on `main` requiring passing unit, integration, EVM, security, and recovery drill checks.
 
 ---
 
@@ -461,3 +469,9 @@ During system hardening, 16 findings identified across security, database isolat
 4. Open a Pull Request against `main`. All GitHub Actions CI checks must pass prior to review approval.
 
 For sensitive security findings, please submit a private advisory rather than opening a public issue.
+
+---
+
+## License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
