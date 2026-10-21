@@ -92,12 +92,61 @@ function scanDirectory(dir: string): Finding[] {
   return findings;
 }
 
+export function scanGitHistory(): Finding[] {
+  const historyFindings: Finding[] = [];
+  try {
+    // Check if git is available and repo has commits
+    const logOutput = execSync("git log -p -n 50 --max-count=50", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    const lines = logOutput.split("\n");
+    let currentCommit = "HEAD";
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line.startsWith("commit ")) {
+        currentCommit = line.substring(7, 15);
+      }
+      if (!line.startsWith("+") || line.startsWith("+++")) continue;
+
+      const addedContent = line.substring(1);
+      if (
+        addedContent.includes("00000000000000000000000000000000") ||
+        addedContent.includes("your-key-here") ||
+        addedContent.includes("[REDACTED") ||
+        addedContent.includes("SECRET_REGEXES") ||
+        addedContent.includes("observability.ts")
+      ) {
+        continue;
+      }
+
+      for (const { name, regex } of SECRET_REGEXES) {
+        if (regex.test(addedContent)) {
+          historyFindings.push({
+            file: `git:commit:${currentCommit}`,
+            line: i + 1,
+            pattern: name,
+          });
+        }
+      }
+    }
+  } catch {
+    // Non-git environment or git command unavailable in minimal container
+  }
+
+  return historyFindings;
+}
+
 export function runSecurityAudit(): {
   clean: boolean;
   findings: Finding[];
+  historyFindings: Finding[];
   gitignoreValid: boolean;
 } {
   const findings = scanDirectory(process.cwd());
+  const historyFindings = scanGitHistory();
 
   const gitignorePath = path.join(process.cwd(), ".gitignore");
   const gitignore = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, "utf-8") : "";
@@ -106,8 +155,9 @@ export function runSecurityAudit(): {
     (gitignore.includes(".env.local") || gitignore.includes(".env*.local"));
 
   return {
-    clean: findings.length === 0,
+    clean: findings.length === 0 && historyFindings.length === 0,
     findings,
+    historyFindings,
     gitignoreValid,
   };
 }
@@ -319,6 +369,15 @@ const AUDITED_SECURITY_EXCEPTIONS: AuditedSecurityException[] = [
     expiryDate: "2026-12-31",
   },
   {
+    advisoryId: "GHSA-587h-7wmj-h5pm",
+    package: "vite",
+    severity: "high",
+    rationale: "Vite dev server launch-editor fs.existsSync check on Windows",
+    mitigation: "Vite dev server is not run in production; production uses prebuilt Nitro output",
+    owner: "Platform Security",
+    expiryDate: "2026-12-31",
+  },
+  {
     advisoryId: "GHSA-52f5-9888-hmc6",
     package: "tmp",
     severity: "high",
@@ -372,18 +431,38 @@ function checkDependencyAudit(): { passed: boolean; unapprovedCount: number } {
   for (const [pkgName, vuln] of Object.entries(vulnerabilities)) {
     if (vuln.severity !== "high" && vuln.severity !== "critical") continue;
 
-    const urls = vuln.via
-      .map((v) => (typeof v === "object" && v?.url ? v.url : ""))
-      .filter(Boolean);
+    // Extract all advisory URLs and associated advisory IDs from the via entries (including string references)
+    const advisoryIds: string[] = [];
+    const directAdvisoryUrls: string[] = [];
+
+    function collectAdvisories(
+      vList: Array<string | { url?: string }>,
+      visited: Set<string> = new Set(),
+    ) {
+      for (const v of vList) {
+        if (typeof v === "object" && v?.url) {
+          directAdvisoryUrls.push(v.url);
+          const match = v.url.match(/GHSA-[a-z0-9-]+/i) || v.url.match(/CVE-[0-9-]+/i);
+          if (match) advisoryIds.push(match[0].toUpperCase());
+        } else if (typeof v === "string" && !visited.has(v) && vulnerabilities[v]) {
+          visited.add(v);
+          collectAdvisories(vulnerabilities[v]!.via, visited);
+        }
+      }
+    }
+
+    collectAdvisories(vuln.via);
 
     let approved = false;
 
     for (const ex of AUDITED_SECURITY_EXCEPTIONS) {
       const isExpired = now > new Date(ex.expiryDate).getTime();
       const pkgMatches = ex.package === pkgName;
-      const urlMatches = urls.some((u) => u.includes(ex.advisoryId));
+      const advisoryMatches = advisoryIds.includes(ex.advisoryId.toUpperCase());
+      const severityMatches = ex.severity.toLowerCase() === vuln.severity.toLowerCase();
 
-      if ((pkgMatches || urlMatches) && !isExpired) {
+      // STRICT VALIDATION: Require BOTH exact package AND exact advisory ID, matching severity, and non-expired exception
+      if (pkgMatches && advisoryMatches && severityMatches && !isExpired) {
         approved = true;
         console.log(
           `[AUDITED EXCEPTION] ${pkgName} (${vuln.severity.toUpperCase()}) -> ${ex.advisoryId} [Valid until ${ex.expiryDate}]`,
@@ -394,7 +473,9 @@ function checkDependencyAudit(): { passed: boolean; unapprovedCount: number } {
     }
 
     if (!approved) {
-      unapproved.push(`${pkgName} (${vuln.severity}): ${urls.join(", ") || "No URL"}`);
+      unapproved.push(
+        `${pkgName} (${vuln.severity}) [Advisories: ${advisoryIds.join(", ") || directAdvisoryUrls.join(", ") || "None"}]: ${vuln.nodes ? vuln.nodes.join("; ") : ""}`,
+      );
     }
   }
 
@@ -417,17 +498,29 @@ if (
   process.argv[1]?.endsWith("security-audit.ts")
 ) {
   console.log("=== Running Secrets & Credentials Scan ===");
-  const { clean, findings, gitignoreValid } = runSecurityAudit();
+  const { clean, findings, historyFindings, gitignoreValid } = runSecurityAudit();
 
   console.log(`[${gitignoreValid ? "PASS" : "FAIL"}] .gitignore guards .env files.`);
 
-  if (findings.length > 0) {
-    console.error(`Found ${findings.length} potential hardcoded secrets in repository:`);
-    for (const f of findings) {
-      console.error(`  - ${f.file}:${f.line} [${f.pattern}]`);
+  if (findings.length > 0 || historyFindings.length > 0) {
+    if (findings.length > 0) {
+      console.error(`Found ${findings.length} potential hardcoded secrets in working tree:`);
+      for (const f of findings) {
+        console.error(`  - ${f.file}:${f.line} [${f.pattern}]`);
+      }
+    }
+    if (historyFindings.length > 0) {
+      console.error(
+        `Found ${historyFindings.length} potential exposed secrets in recent git commit history:`,
+      );
+      for (const f of historyFindings) {
+        console.error(`  - ${f.file} [${f.pattern}]`);
+      }
     }
   } else {
-    console.log("[PASS] No hardcoded production credentials found in source files.");
+    console.log(
+      "[PASS] No hardcoded production credentials found in source files or recent git history.",
+    );
   }
 
   const { passed: auditPassed, unapprovedCount } = checkDependencyAudit();

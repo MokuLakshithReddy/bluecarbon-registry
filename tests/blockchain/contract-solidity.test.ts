@@ -167,57 +167,124 @@ test("Contract ABI: Interface encodes and decodes anchorRecord and events with f
 
 test("Contract RBAC Simulation: Authorized vs Unauthorized verifier behavior", () => {
   const authorizedVerifiers = new Set<string>();
-  const owner = "0x1111111111111111111111111111111111111111".toLowerCase();
+  const anchoredRecords = new Map<
+    string,
+    { projectCode: string; milliTco2e: bigint; timestamp: bigint; verifier: string }
+  >();
+  let owner = "0x1111111111111111111111111111111111111111".toLowerCase();
   authorizedVerifiers.add(owner); // Deployer is auto-authorized
 
-  function anchorRecordSimulated(caller: string) {
+  function anchorRecord(
+    caller: string,
+    recordHash: string,
+    projectCode: string,
+    milliTco2e: bigint,
+  ) {
     const norm = caller.toLowerCase();
     if (!authorizedVerifiers.has(norm) && norm !== owner) {
       throw new Error(`UnauthorizedVerifier: caller ${caller} is not an authorized verifier`);
     }
+    if (recordHash === ethers.ZeroHash || !recordHash || recordHash === "0x0") {
+      throw new Error("InvalidRecordHash: recordHash cannot be zero");
+    }
+    if (anchoredRecords.has(recordHash)) {
+      throw new Error(`RecordAlreadyAnchored: recordHash ${recordHash} has already been anchored`);
+    }
+    anchoredRecords.set(recordHash, {
+      projectCode,
+      milliTco2e,
+      timestamp: BigInt(Date.now()),
+      verifier: norm,
+    });
     return true;
   }
 
-  function authorizeVerifierSimulated(caller: string, newVerifier: string) {
+  function authorizeVerifier(caller: string, newVerifier: string) {
     if (caller.toLowerCase() !== owner) {
       throw new Error("OnlyOwner: caller is not contract owner");
+    }
+    if (newVerifier === ethers.ZeroAddress) {
+      throw new Error("ZeroAddress: cannot authorize zero address");
     }
     authorizedVerifiers.add(newVerifier.toLowerCase());
   }
 
-  function revokeVerifierSimulated(caller: string, verifierToRevoke: string) {
+  function revokeVerifier(caller: string, verifierToRevoke: string) {
     if (caller.toLowerCase() !== owner) {
       throw new Error("OnlyOwner: caller is not contract owner");
+    }
+    if (verifierToRevoke === ethers.ZeroAddress) {
+      throw new Error("ZeroAddress: cannot revoke zero address");
     }
     authorizedVerifiers.delete(verifierToRevoke.toLowerCase());
   }
 
+  function transferOwnership(caller: string, newOwner: string) {
+    if (caller.toLowerCase() !== owner) {
+      throw new Error("OnlyOwner: caller is not contract owner");
+    }
+    if (newOwner === ethers.ZeroAddress) {
+      throw new Error("ZeroAddress: cannot transfer to zero address");
+    }
+    owner = newOwner.toLowerCase();
+  }
+
   const authorizedVerifier = "0x2222222222222222222222222222222222222222";
   const unauthorizedAttacker = "0x9999999999999999999999999999999999999999";
+  const sampleHash1 = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const sampleHash2 = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
   // 1. Unauthorized caller fails to anchor
   assert.throws(
-    () => anchorRecordSimulated(unauthorizedAttacker),
+    () => anchorRecord(unauthorizedAttacker, sampleHash1, "BC-001", 1000n),
     /UnauthorizedVerifier/,
     "Unauthorized address must be rejected",
   );
 
   // 2. Non-owner cannot authorize verifiers
   assert.throws(
-    () => authorizeVerifierSimulated(unauthorizedAttacker, authorizedVerifier),
+    () => authorizeVerifier(unauthorizedAttacker, authorizedVerifier),
     /OnlyOwner/,
     "Non-owner cannot grant verifier rights",
   );
 
   // 3. Owner authorizes verifier -> anchoring succeeds
-  authorizeVerifierSimulated(owner, authorizedVerifier);
-  assert.strictEqual(anchorRecordSimulated(authorizedVerifier), true);
+  authorizeVerifier(owner, authorizedVerifier);
+  assert.strictEqual(anchorRecord(authorizedVerifier, sampleHash1, "BC-001", 1000n), true);
 
-  // 4. Owner revokes verifier -> anchoring now fails
-  revokeVerifierSimulated(owner, authorizedVerifier);
+  // 4. Duplicate anchoring of the same recordHash MUST REVERT
   assert.throws(
-    () => anchorRecordSimulated(authorizedVerifier),
+    () => anchorRecord(authorizedVerifier, sampleHash1, "BC-001", 1000n),
+    /RecordAlreadyAnchored/,
+    "Re-anchoring the same recordHash must revert immediately",
+  );
+
+  // 5. Zero recordHash is rejected
+  assert.throws(
+    () => anchorRecord(authorizedVerifier, ethers.ZeroHash, "BC-001", 1000n),
+    /InvalidRecordHash/,
+    "Zero bytes32 recordHash must revert",
+  );
+
+  // 6. Owner revokes verifier -> subsequent anchoring now fails
+  revokeVerifier(owner, authorizedVerifier);
+  assert.throws(
+    () => anchorRecord(authorizedVerifier, sampleHash2, "BC-002", 2000n),
     /UnauthorizedVerifier/,
     "Revoked verifier must be blocked from anchoring",
   );
+
+  // 7. Ownership transfer enables new governor to manage verifiers
+  const oldOwner = owner;
+  const newGovernor = "0x3333333333333333333333333333333333333333";
+  transferOwnership(oldOwner, newGovernor);
+  assert.throws(
+    () => authorizeVerifier(oldOwner, authorizedVerifier),
+    /OnlyOwner/,
+    "Old owner loses verifier authorization privileges",
+  );
+
+  // New owner re-authorizes verifier -> anchoring succeeds again
+  authorizeVerifier(newGovernor, authorizedVerifier);
+  assert.strictEqual(anchorRecord(authorizedVerifier, sampleHash2, "BC-002", 2000n), true);
 });

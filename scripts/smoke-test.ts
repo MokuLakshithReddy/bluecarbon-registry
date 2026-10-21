@@ -22,6 +22,7 @@ export async function runSmokeTests(
     webUrl?: string;
     workerHealthUrl?: string;
     checkBlockchain?: boolean;
+    requireProductionServices?: boolean;
   } = {},
 ): Promise<{ allPassed: boolean; checks: SmokeCheck[] }> {
   const webUrl = options.webUrl || process.env["APP_URL"] || "http://localhost:3000";
@@ -105,7 +106,16 @@ export async function runSmokeTests(
     process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
     process.env["VITE_SUPABASE_ANON_KEY"];
 
-  if (dbUrl && anonKey) {
+  if (!dbUrl || !anonKey) {
+    if (options.requireProductionServices) {
+      checks.push({
+        name: "Database Configuration Presence",
+        passed: false,
+        durationMs: 0,
+        details: "FAIL: SUPABASE_URL and SUPABASE_ANON_KEY are required for release validation.",
+      });
+    }
+  } else {
     const dbStart = Date.now();
     try {
       const res = await fetch(`${dbUrl}/rest/v1/rpc/list_public_projects`, {
@@ -134,17 +144,21 @@ export async function runSmokeTests(
     }
   }
 
-  // 5. Blockchain RPC Connectivity & Contract Code Check (if configured)
+  // 5. Blockchain RPC Connectivity, Chain ID & Contract Code Check
   const rpcUrl = process.env["BLOCKCHAIN_RPC_URL"];
   const contractAddress = process.env["BLOCKCHAIN_CONTRACT_ADDRESS"];
-  if (options.checkBlockchain ?? Boolean(rpcUrl)) {
+  const expectedChainId = process.env["BLOCKCHAIN_CHAIN_ID"];
+  const shouldCheckBlockchain =
+    options.checkBlockchain ?? options.requireProductionServices ?? Boolean(rpcUrl);
+
+  if (shouldCheckBlockchain) {
     const bStart = Date.now();
     if (!rpcUrl) {
       checks.push({
         name: "Blockchain RPC Check",
         passed: false,
         durationMs: 0,
-        details: "BLOCKCHAIN_RPC_URL environment variable is missing",
+        details: "FAIL: BLOCKCHAIN_RPC_URL is missing in release validation mode",
       });
     } else {
       try {
@@ -172,13 +186,51 @@ export async function runSmokeTests(
             : `RPC Error: ${json.error?.message ?? "Invalid response"}`,
         });
 
-        if (contractAddress && hasBlock) {
+        // 5a. Chain ID verification
+        if (hasBlock) {
+          const chainIdPayload = JSON.stringify({
+            jsonrpc: "2.0",
+            method: "eth_chainId",
+            params: [],
+            id: 2,
+          });
+          const chainRes = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: chainIdPayload,
+            signal: AbortSignal.timeout(5000),
+          });
+          const chainJson = (await chainRes.json()) as { result?: string };
+          const actualChainId = chainJson.result ? parseInt(chainJson.result, 16) : null;
+          const chainMatch = expectedChainId
+            ? actualChainId === parseInt(expectedChainId, 10)
+            : true;
+
+          checks.push({
+            name: "Blockchain Chain ID (eth_chainId)",
+            passed: chainRes.status === 200 && Boolean(actualChainId) && chainMatch,
+            durationMs: Date.now() - bStart,
+            details: actualChainId
+              ? `Chain ID: ${actualChainId}${expectedChainId ? ` (expected ${expectedChainId})` : ""}`
+              : "Unable to retrieve eth_chainId",
+          });
+        }
+
+        // 5b. Contract bytecode verification
+        if (!contractAddress && options.requireProductionServices) {
+          checks.push({
+            name: "Blockchain Contract Code Presence",
+            passed: false,
+            durationMs: 0,
+            details: "FAIL: BLOCKCHAIN_CONTRACT_ADDRESS is missing in release validation mode",
+          });
+        } else if (contractAddress && hasBlock) {
           const cStart = Date.now();
           const codePayload = JSON.stringify({
             jsonrpc: "2.0",
             method: "eth_getCode",
             params: [contractAddress, "latest"],
-            id: 2,
+            id: 3,
           });
           const codeRes = await fetch(rpcUrl, {
             method: "POST",
@@ -224,10 +276,18 @@ if (
   // Strict mode is ENABLED by default; use --permissive or SMOKE_STRICT=false only for non-blocking local observation
   const isStrict =
     !process.argv.includes("--permissive") && process.env["SMOKE_STRICT"] !== "false";
-  console.log(`=== Running Staging / Production Smoke Tests (Strict Mode: ${isStrict}) ===`);
+  const isReleaseMode =
+    process.argv.includes("--release") || process.env["RELEASE_MODE"] === "production";
+
+  console.log(
+    `=== Running Staging / Production Smoke Tests (Strict Mode: ${isStrict}, Release Mode: ${isReleaseMode}) ===`,
+  );
   runSmokeTests({
     checkBlockchain:
-      process.argv.includes("--blockchain") || process.env["CHECK_BLOCKCHAIN"] === "true",
+      process.argv.includes("--blockchain") ||
+      process.env["CHECK_BLOCKCHAIN"] === "true" ||
+      isReleaseMode,
+    requireProductionServices: isReleaseMode,
   }).then(({ allPassed, checks }) => {
     for (const c of checks) {
       console.log(

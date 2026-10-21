@@ -137,40 +137,62 @@ export async function validateLiveDatabase(): Promise<{
     });
 
     // 4a. Anonymous access to audit_logs must be DENIED (RLS active)
+    // First, verify with service-role client that audit_logs actually contains rows to prevent false passes on empty tables
+    let serviceAuditCount = 0;
+    try {
+      const { count } = await supabase
+        .from("audit_logs")
+        .select("*", { count: "exact", head: true });
+      serviceAuditCount = count ?? 0;
+    } catch {
+      // ignore
+    }
+
     try {
       const { data, error } = await anonClient.from("audit_logs").select("*").limit(1);
-      const blocked = error != null || !data || data.length === 0;
+      // RLS policy rejection returns either an explicit error (e.g. 42501 permission denied) or empty array when table has rows
+      const isDenied = Boolean(error) || (serviceAuditCount > 0 && (!data || data.length === 0));
       results.push({
         step: "RLS Enforcement: audit_logs isolated from anonymous access",
-        passed: blocked,
-        details: blocked
-          ? "Anonymous access blocked by RLS."
-          : "FAILURE: audit_logs returned data to anonymous caller!",
+        passed: isDenied,
+        details: isDenied
+          ? `Anonymous access blocked by RLS (service rows: ${serviceAuditCount}, anon error: ${error?.message ?? "empty"}).`
+          : "FAILURE: audit_logs returned data or table is empty and cannot prove RLS isolation!",
       });
     } catch {
       results.push({
         step: "RLS Enforcement: audit_logs isolated from anonymous access",
         passed: true,
-        details: "Anonymous access rejected.",
+        details: "Anonymous access rejected with exception.",
       });
     }
 
     // 4b. Anonymous access to blockchain_outbox must be DENIED
+    let serviceOutboxCount = 0;
+    try {
+      const { count } = await supabase
+        .from("blockchain_outbox")
+        .select("*", { count: "exact", head: true });
+      serviceOutboxCount = count ?? 0;
+    } catch {
+      // ignore
+    }
+
     try {
       const { data, error } = await anonClient.from("blockchain_outbox").select("*").limit(1);
-      const blocked = error != null || !data || data.length === 0;
+      const isDenied = Boolean(error) || (serviceOutboxCount > 0 && (!data || data.length === 0));
       results.push({
         step: "RLS Enforcement: blockchain_outbox isolated from anonymous access",
-        passed: blocked,
-        details: blocked
-          ? "Outbox queue blocked by RLS."
-          : "FAILURE: blockchain_outbox exposed to anonymous caller!",
+        passed: isDenied,
+        details: isDenied
+          ? `Outbox queue blocked by RLS (service rows: ${serviceOutboxCount}, anon error: ${error?.message ?? "empty"}).`
+          : "FAILURE: blockchain_outbox returned data or table is empty without proof of isolation!",
       });
     } catch {
       results.push({
         step: "RLS Enforcement: blockchain_outbox isolated from anonymous access",
         passed: true,
-        details: "Anonymous access rejected.",
+        details: "Anonymous access rejected with exception.",
       });
     }
 
@@ -265,7 +287,7 @@ export async function validateLiveDatabase(): Promise<{
     results.push({
       step: "RLS Anonymous Verification",
       passed: false,
-      details: "WARNING: SUPABASE_ANON_KEY not set. Cannot verify anonymous boundary isolation.",
+      details: "FAILURE: SUPABASE_ANON_KEY not set. Cannot verify anonymous boundary isolation.",
     });
   }
 
@@ -273,6 +295,8 @@ export async function validateLiveDatabase(): Promise<{
   // When staging session tokens (or test account credentials) are configured, verify cross-project isolation
   const ownerJwt = process.env["STAGING_OWNER_JWT"];
   const verifierJwt = process.env["STAGING_VERIFIER_JWT"];
+  const isReleaseMode =
+    process.env["RELEASE_MODE"] === "production" || process.argv.includes("--release");
 
   if (ownerJwt) {
     const ownerClient = createClient(url, anonKey || serviceKey, {
@@ -328,18 +352,28 @@ export async function validateLiveDatabase(): Promise<{
     }
 
     // 5c. Owner CANNOT view private evidence belonging to another project ID
+    // Find an actual existing project owned by another user via service role to test real isolation
+    let foreignProjectId = "ffffffff-ffff-ffff-ffff-ffffffffffff";
     try {
-      const FOREIGN_PROJECT_ID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+      const { data: foreignProjects } = await supabase.from("projects").select("id").limit(5);
+      if (foreignProjects && foreignProjects.length > 0) {
+        foreignProjectId = foreignProjects[foreignProjects.length - 1]!.id;
+      }
+    } catch {
+      // fallback to UUID
+    }
+
+    try {
       const { data, error } = await ownerClient
         .from("evidence")
         .select("id, file_url")
-        .eq("project_id", FOREIGN_PROJECT_ID);
+        .eq("project_id", foreignProjectId);
       const noLeak = error != null || !data || data.length === 0;
       results.push({
         step: "Authenticated Owner: Cross-project private evidence read blocked",
         passed: noLeak,
         details: noLeak
-          ? "No foreign evidence visible to owner session."
+          ? `No foreign evidence visible to owner session for project ${foreignProjectId}.`
           : "FAILURE: Foreign project private evidence returned to owner!",
       });
     } catch {
@@ -352,9 +386,10 @@ export async function validateLiveDatabase(): Promise<{
   } else {
     results.push({
       step: "Authenticated Owner Session Verification",
-      passed: true,
-      details:
-        "STAGING_OWNER_JWT not set; skipping live owner session check (anonymous RLS verified).",
+      passed: !isReleaseMode,
+      details: isReleaseMode
+        ? "FAIL: STAGING_OWNER_JWT is required for release-validation mode."
+        : "SKIPPED: STAGING_OWNER_JWT not set; skipping live owner session check (dev mode).",
     });
   }
 
@@ -388,9 +423,10 @@ export async function validateLiveDatabase(): Promise<{
   } else {
     results.push({
       step: "Authenticated Verifier Session Verification",
-      passed: true,
-      details:
-        "STAGING_VERIFIER_JWT not set; skipping live verifier session check (anonymous RLS verified).",
+      passed: !isReleaseMode,
+      details: isReleaseMode
+        ? "FAIL: STAGING_VERIFIER_JWT is required for release-validation mode."
+        : "SKIPPED: STAGING_VERIFIER_JWT not set; skipping live verifier session check (dev mode).",
     });
   }
 
