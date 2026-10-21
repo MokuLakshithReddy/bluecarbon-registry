@@ -76,7 +76,7 @@ export async function fetchPublicProjects(): Promise<PublicProjectSummary[]> {
   return (data ?? []) as unknown as PublicProjectSummary[];
 }
 
-type VerifierClient = ReturnType<typeof publicServerClient>;
+export type VerifierClient = ReturnType<typeof publicServerClient>;
 
 export interface AuthContext {
   userId: string;
@@ -337,21 +337,28 @@ export async function approveProject(input: DecisionInput) {
       }
 
       if (storagePath) {
-        let storageClient: {
-          from: (bucket: string) => {
-            download: (
+        type EvidenceStorageClient = {
+          from(bucket: string): {
+            download(
               path: string,
-            ) => Promise<{ data: Blob | Uint8Array | null; error: { message: string } | null }>;
+            ): Promise<{ data: Blob | Uint8Array | null; error: { message: string } | null }>;
           };
-        } | null = null;
+        };
+
+        let storageClient: EvidenceStorageClient | null = null;
         try {
           const admin = await getAdmin();
-          storageClient = (admin as unknown as { storage: typeof storageClient })?.storage;
+          if (admin && "storage" in admin) {
+            storageClient = (admin as unknown as { storage: EvidenceStorageClient }).storage;
+          }
         } catch {
-          storageClient = (input.supabase as unknown as { storage: typeof storageClient })?.storage;
+          if (input.supabase && "storage" in input.supabase) {
+            storageClient = (input.supabase as unknown as { storage: EvidenceStorageClient })
+              .storage;
+          }
         }
 
-        if (storageClient?.from) {
+        if (storageClient) {
           const { data: fileBlob, error: downloadError } = await storageClient
             .from("evidence")
             .download(storagePath);
@@ -363,12 +370,10 @@ export async function approveProject(input: DecisionInput) {
           }
 
           if (fileBlob) {
-            const bytes =
+            const bytes: Uint8Array =
               fileBlob instanceof Uint8Array
                 ? fileBlob
-                : typeof fileBlob.arrayBuffer === "function"
-                  ? new Uint8Array(await fileBlob.arrayBuffer())
-                  : Buffer.from(fileBlob);
+                : new Uint8Array(await fileBlob.arrayBuffer());
 
             const provenance = verifyEvidenceProvenance(bytes, item.file_hash!);
             if (!provenance.valid) {
