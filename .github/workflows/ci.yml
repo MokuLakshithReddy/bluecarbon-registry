@@ -88,3 +88,30 @@ jobs:
           SUPABASE_URL: "https://ci-mock-project.supabase.co"
           SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ci_mock_key"
         run: npm run build
+
+  release-gate:
+    name: Production Release Gate & Recovery Verification
+    runs-on: ubuntu-latest
+    needs: [test, build]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies (reproducible clean install)
+        run: npm ci
+
+      - name: Verify smoke test resilience and RPC failover
+        run: node --experimental-strip-types tests/deployment/smoke-test-resilience.test.ts
+
+      - name: Verify crash recovery and concurrency safety drills
+        run: node --experimental-strip-types tests/verification/crash-recovery-concurrency.test.ts
+
+      - name: Verify zero uncommitted artifacts or dirty working tree
+        run: git diff --exit-code

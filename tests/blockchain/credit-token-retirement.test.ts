@@ -378,3 +378,163 @@ test("P1 — Bound timelock governs administrative actions: prevents bypass and 
   const replayRes = await call(adminAddr, executeActionData, laterBlock);
   assert.ok(replayRes.exceptionError, "Action cannot be executed twice (TimelockAlreadyExecuted)");
 });
+
+test("P1 — Ownership & Governance: Revokes previous-owner privileges completely upon ownership transfer", async () => {
+  const { abi, bytecode } = compileContract();
+  const vm = await createVM();
+  const iface = new ethers.Interface(abi);
+
+  const block = createBlock({ header: { timestamp: 1770000000n, number: 100n } });
+  const originalOwnerAddr = createAddressFromString("0x1111111111111111111111111111111111111111");
+  const newOwnerAddr = createAddressFromString("0x2222222222222222222222222222222222222222");
+
+  const deployResult = await vm.evm.runCall({
+    block,
+    caller: originalOwnerAddr,
+    data: bytecode,
+    gasLimit: 10_000_000n,
+  });
+  const contractAddr = deployResult.createdAddress!;
+
+  async function call(caller: typeof originalOwnerAddr, data: string) {
+    const res = await vm.evm.runCall({
+      block,
+      caller,
+      to: contractAddr,
+      data: Buffer.from(data.slice(2), "hex"),
+      gasLimit: 3_000_000n,
+    });
+    return res.execResult;
+  }
+
+  // 1. Initial owner has admin and verifier roles
+  const checkAdminRole = iface.encodeFunctionData("hasRole", [
+    ethers.ZeroHash, // DEFAULT_ADMIN_ROLE
+    "0x1111111111111111111111111111111111111111",
+  ]);
+  const initialAdminRes = await call(originalOwnerAddr, checkAdminRole);
+  assert.strictEqual(
+    iface.decodeFunctionResult("hasRole", initialAdminRes.returnValue)[0],
+    true,
+    "Original owner initially has admin role",
+  );
+
+  // 2. Transfer ownership to new owner
+  const transferData = iface.encodeFunctionData("transferOwnership", [
+    "0x2222222222222222222222222222222222222222",
+  ]);
+  const transferRes = await call(originalOwnerAddr, transferData);
+  assert.strictEqual(transferRes.exceptionError, undefined, "Ownership transfer succeeds");
+
+  // 3. Verify original owner no longer has DEFAULT_ADMIN_ROLE
+  const postTransferAdminRes = await call(newOwnerAddr, checkAdminRole);
+  assert.strictEqual(
+    iface.decodeFunctionResult("hasRole", postTransferAdminRes.returnValue)[0],
+    false,
+    "Previous owner MUST NOT retain DEFAULT_ADMIN_ROLE",
+  );
+
+  // 4. Verify original owner cannot execute administrative action
+  const unauthorizedAdminCall = iface.encodeFunctionData("grantRole", [
+    ethers.ZeroHash,
+    "0x3333333333333333333333333333333333333333",
+  ]);
+  const adminExecRes = await call(originalOwnerAddr, unauthorizedAdminCall);
+  assert.ok(
+    adminExecRes.exceptionError,
+    "Previous owner calling admin functions must revert (UnauthorizedRole)",
+  );
+
+  // 5. Verify new owner can successfully administer
+  const newOwnerAdminCall = iface.encodeFunctionData("grantRole", [
+    ethers.id("AUDITOR_ROLE"),
+    "0x3333333333333333333333333333333333333333",
+  ]);
+  const newOwnerExecRes = await call(newOwnerAddr, newOwnerAdminCall);
+  assert.strictEqual(
+    newOwnerExecRes.exceptionError,
+    undefined,
+    "New owner has full administrative authority",
+  );
+});
+
+test("P1 — Ownership & Governance: Enforced timelock cannot be disabled immediately; requires queued action and 2-day delay", async () => {
+  const { abi, bytecode } = compileContract();
+  const vm = await createVM();
+  const iface = new ethers.Interface(abi);
+
+  const initialBlock = createBlock({ header: { timestamp: 1770000000n, number: 100n } });
+  const adminAddr = createAddressFromString("0x1111111111111111111111111111111111111111");
+
+  const deployResult = await vm.evm.runCall({
+    block: initialBlock,
+    caller: adminAddr,
+    data: bytecode,
+    gasLimit: 10_000_000n,
+  });
+  const contractAddr = deployResult.createdAddress!;
+
+  async function call(caller: typeof adminAddr, data: string, block = initialBlock) {
+    const res = await vm.evm.runCall({
+      block,
+      caller,
+      to: contractAddr,
+      data: Buffer.from(data.slice(2), "hex"),
+      gasLimit: 3_000_000n,
+    });
+    return res.execResult;
+  }
+
+  // 1. Enable timelock enforcement
+  const enableData = iface.encodeFunctionData("setTimelockEnforcement", [true]);
+  const enableRes = await call(adminAddr, enableData, initialBlock);
+  assert.strictEqual(enableRes.exceptionError, undefined, "Enabling timelock succeeds");
+
+  // 2. Immediate disable attempt MUST REVERT (TimelockEnforcedUseQueuedAction)
+  const immediateDisableData = iface.encodeFunctionData("setTimelockEnforcement", [false]);
+  const immediateDisableRes = await call(adminAddr, immediateDisableData, initialBlock);
+  assert.ok(
+    immediateDisableRes.exceptionError,
+    "Immediate attempt to disable timelock must revert (TimelockEnforcedUseQueuedAction)",
+  );
+
+  // 3. Must schedule through queued admin action (SET_TIMELOCK_ENFORCEMENT = enum 5, target = address(0) to disable)
+  const scheduleDisableData = iface.encodeFunctionData("scheduleAdminAction", [
+    5, // AdminActionType.SET_TIMELOCK_ENFORCEMENT
+    ethers.ZeroAddress,
+    ethers.ZeroHash,
+  ]);
+  const scheduleRes = await call(adminAddr, scheduleDisableData, initialBlock);
+  assert.strictEqual(scheduleRes.exceptionError, undefined, "Scheduling disable action succeeds");
+
+  // 4. Executing prematurely reverts
+  const executeDisableData = iface.encodeFunctionData("executeAdminAction", [
+    5, // AdminActionType.SET_TIMELOCK_ENFORCEMENT
+    ethers.ZeroAddress,
+    ethers.ZeroHash,
+  ]);
+  const earlyExecRes = await call(adminAddr, executeDisableData, initialBlock);
+  assert.ok(earlyExecRes.exceptionError, "Premature execution of disable action must revert");
+
+  // 5. Fast-forward past 2-day timelock delay
+  const laterBlock = createBlock({
+    header: {
+      timestamp: initialBlock.header.timestamp + 172_900n,
+      number: initialBlock.header.number + 100n,
+    },
+  });
+
+  // 6. Execute queued disable action after delay
+  const validExecRes = await call(adminAddr, executeDisableData, laterBlock);
+  assert.strictEqual(
+    validExecRes.exceptionError,
+    undefined,
+    "Executing disable after delay succeeds",
+  );
+
+  // 7. Verify timelockEnforced is now false
+  const checkEnforcedData = iface.encodeFunctionData("timelockEnforced", []);
+  const checkRes = await call(adminAddr, checkEnforcedData, laterBlock);
+  const isEnforced = iface.decodeFunctionResult("timelockEnforced", checkRes.returnValue)[0];
+  assert.strictEqual(isEnforced, false, "Timelock enforcement successfully disabled via timelock");
+});

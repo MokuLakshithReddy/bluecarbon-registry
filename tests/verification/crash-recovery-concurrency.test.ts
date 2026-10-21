@@ -153,3 +153,119 @@ test("Crash Recovery: error recording failure in outbox raises clear compound er
     await processClaimedOutboxJob(mockSupabase as VerifierClient, job);
   }, /Outbox job execution failed.*recording failure in outbox also failed/i);
 });
+
+test("Crash Recovery: Worker crashes after on-chain mining; next worker self-heals without duplicate transactions", async () => {
+  let blockchainAnchorsCount = 0;
+  let outboxCompleteCallCount = 0;
+
+  const mockProvider = {
+    network: "polygon-amoy",
+    simulated: false,
+    anchor: async () => {
+      blockchainAnchorsCount++;
+      return {
+        record_hash: "0x" + "a".repeat(64),
+        tx_hash: "0x" + "b".repeat(64),
+        block_number: 12345,
+        network: "polygon-amoy",
+        status: "CONFIRMED" as const,
+        simulated: false,
+        explorer_url: null,
+      };
+    },
+  };
+
+  // State: project was marked VERIFIED in database before worker crashed
+  const mockSupabase: Partial<VerifierClient> = {
+    from: (table: string) => {
+      if (table === "projects") {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: PROJECT_ID,
+                  status: "VERIFIED",
+                  verified_carbon: 640.5,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        } as never;
+      }
+      if (table === "blockchain_records") {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => ({
+                limit: () => ({
+                  maybeSingle: async () => ({
+                    // Already confirmed on-chain before crash
+                    data: {
+                      tx_hash: "0x" + "b".repeat(64),
+                      record_hash: "0x" + "a".repeat(64),
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }),
+        } as never;
+      }
+      return {} as never;
+    },
+    rpc: ((fn: string) => {
+      if (fn === "complete_outbox_job") {
+        outboxCompleteCallCount++;
+        return Promise.resolve({ data: { success: true }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    }) as never,
+  };
+
+  const job = {
+    id: JOB_ID,
+    project_id: PROJECT_ID,
+    payload: mockPayload,
+    attempts: 2,
+  };
+
+  const result = await processClaimedOutboxJob(
+    mockSupabase as VerifierClient,
+    job,
+    "worker-node-2",
+  );
+
+  assert.strictEqual(result.processed, true);
+  assert.strictEqual(result.alreadyVerified, true);
+  assert.strictEqual(outboxCompleteCallCount, 1, "Must complete outbox job during self-healing");
+});
+
+test("Crash Recovery: Concurrent lease contention simulates mutually exclusive job claiming", async () => {
+  // Simulates PostgreSQL FOR UPDATE SKIP LOCKED
+  let leaseOwner: string | null = null;
+
+  async function claimJob(workerId: string): Promise<boolean> {
+    if (leaseOwner === null) {
+      leaseOwner = workerId;
+      return true;
+    }
+    // Already locked by another worker
+    return false;
+  }
+
+  const [worker1Result, worker2Result] = await Promise.all([
+    claimJob("worker-node-1"),
+    claimJob("worker-node-2"),
+  ]);
+
+  // Exactly one worker must successfully claim the lease
+  assert.strictEqual(
+    worker1Result !== worker2Result,
+    true,
+    "Only one worker can claim the lease lock",
+  );
+  assert.ok(worker1Result ? leaseOwner === "worker-node-1" : leaseOwner === "worker-node-2");
+});

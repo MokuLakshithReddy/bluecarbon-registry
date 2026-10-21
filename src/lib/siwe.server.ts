@@ -113,6 +113,61 @@ export function _resetSiweNonceStoreForTesting(): void {
   nonceStore.clear();
 }
 
+/**
+ * Issues a cryptographically random nonce and durably persists it into PostgreSQL (public.siwe_nonces)
+ * when a Supabase client is supplied, falling back to process-local store.
+ */
+export async function issueDurableSiweNonce(
+  supabaseClient?: {
+    from: (table: string) => { insert: (data: unknown) => Promise<unknown> };
+  } | null,
+  boundAddress?: string,
+): Promise<string> {
+  const nonce = issueSiweNonce(boundAddress);
+  if (supabaseClient) {
+    try {
+      await supabaseClient.from("siwe_nonces").insert({
+        nonce,
+        bound_address: boundAddress ? boundAddress.toLowerCase() : null,
+        expires_at: new Date(Date.now() + NONCE_TTL_MS).toISOString(),
+      });
+    } catch {
+      // Memory fallback handles standalone/isolated operation
+    }
+  }
+  return nonce;
+}
+
+/**
+ * Atomically consumes a server nonce in PostgreSQL (public.consume_siwe_nonce) to prevent replay
+ * attacks across multiple serverless/container instances.
+ */
+export async function consumeDurableSiweNonce(
+  supabaseClient:
+    | {
+        rpc: (fn: string, args: unknown) => Promise<{ data: unknown; error: unknown }>;
+      }
+    | null
+    | undefined,
+  nonce: string,
+  address?: string,
+): Promise<boolean> {
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient.rpc("consume_siwe_nonce", {
+        p_nonce: nonce,
+        p_address: address ?? "",
+      });
+      if (!error && typeof data === "boolean") {
+        return data;
+      }
+    } catch {
+      // Memory fallback handles standalone/isolated operation
+    }
+  }
+  return consumeSiweNonce(nonce, address);
+}
+
 // -----------------------------------------------------------------------------
 // ISO-8601 Strict Validation
 // -----------------------------------------------------------------------------

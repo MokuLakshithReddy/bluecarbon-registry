@@ -125,6 +125,70 @@ export function _resetComplianceLedgerForTesting(): void {
   complianceLedger.length = 0;
 }
 
+/**
+ * Calculates 365-day cumulative volume using PostgreSQL (public.get_cumulative_annual_volume)
+ * when Supabase is available, falling back to process-local ledger.
+ */
+export async function getCumulativeAnnualVolumeDurable(
+  walletAddress: string,
+  supabaseClient?: {
+    rpc: (fn: string, args: unknown) => Promise<{ data: unknown; error: unknown }>;
+  } | null,
+  asOfMs = Date.now(),
+): Promise<bigint> {
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient.rpc("get_cumulative_annual_volume", {
+        p_wallet_address: walletAddress.toLowerCase(),
+        p_as_of: new Date(asOfMs).toISOString(),
+      });
+      if (!error && data !== null && data !== undefined) {
+        return BigInt(data as number | string | bigint);
+      }
+    } catch {
+      // Memory fallback handles standalone/isolated operation
+    }
+  }
+  return getCumulativeAnnualVolume(walletAddress, asOfMs);
+}
+
+/**
+ * Atomically records a compliance transaction in PostgreSQL (public.record_compliance_transaction)
+ * when Supabase is available, falling back to process-local ledger.
+ */
+export async function recordComplianceTransactionDurable(
+  walletAddress: string,
+  action: ComplianceAction,
+  amountMilliTco2e: bigint,
+  supabaseClient?: {
+    rpc: (fn: string, args: unknown) => Promise<{ data: unknown; error: unknown }>;
+  } | null,
+  timestampMs = Date.now(),
+): Promise<ComplianceTransaction> {
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient.rpc("record_compliance_transaction", {
+        p_wallet_address: walletAddress.toLowerCase(),
+        p_action: action,
+        p_amount_milli_tco2e: amountMilliTco2e.toString(),
+        p_timestamp: new Date(timestampMs).toISOString(),
+      });
+      if (!error && data) {
+        return {
+          id: String(data),
+          walletAddress: walletAddress.toLowerCase(),
+          action,
+          amountMilliTco2e,
+          timestampMs,
+        };
+      }
+    } catch {
+      // Memory fallback handles standalone/isolated operation
+    }
+  }
+  return recordComplianceTransaction(walletAddress, action, amountMilliTco2e, timestampMs);
+}
+
 // -----------------------------------------------------------------------------
 // Transaction Eligibility Enforcement
 // -----------------------------------------------------------------------------

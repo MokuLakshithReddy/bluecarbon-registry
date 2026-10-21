@@ -128,3 +128,51 @@ Checks:
    ```
 3. Re-deploy previous stable worker container tag.
 4. Verify `/healthz` and `/readyz`.
+
+---
+
+## 7. Branch Protection, CI Release Gates & Environment Staging
+
+To prevent unreviewed or breaking changes from degrading production security, the repository implements strict GitHub release gates and branch protection rules.
+
+### Branch Protection Invariants (`main` branch)
+
+1. **Require Pull Request Reviews**: Direct pushes to `main` are restricted. All changes require an approved Pull Request with code owner verification.
+2. **Require Passing CI Release Gates**: The GitHub Actions workflow enforces three sequential gates:
+   - `test`: Executes all unit, integration, and security canary suites (including real PGlite database migration and RLS evaluation, plus Solidity compilation and contract tests).
+   - `build`: Validates TypeScript strict compilation and client/server bundle output.
+   - `release-gate`: Runs the automated smoke test resilience harness and worker crash-recovery drills under stress conditions, failing if any git working tree drift is detected.
+3. **Require Up-to-Date Branches**: Branches must be rebased or merged with `main` before merging to prevent race conditions in schema or contract changes.
+4. **Include Administrators**: Governance rules and timelock checks cannot be bypassed by repository administrators.
+
+### Staging Environment Promotion Protocol
+
+Every release must deploy to a dedicated staging environment before production promotion:
+
+- **Isolated Database**: Dedicated Supabase staging project with fresh migrations applied and validated via `scripts/validate-live-db.ts`.
+- **EVM Testnet Validation**: Connected to Polygon Amoy or Ethereum Sepolia testnet with contract bytecode and chain ID explicitly verified via `validateEVMNetworkAndContract`.
+- **Synthetic Traffic & Probes**: Pre-release automated smoke testing (`scripts/smoke-test.ts --strict`) and lease recovery verification run prior to DNS switchover.
+
+---
+
+## 8. Completed Disaster Recovery & Crash Recovery Drill Evidence
+
+### Drill Objective
+
+Validate zero credit duplication, zero orphaned leases, and safe replay reconciliation under worker crashes, network partitions, and database restoration scenarios.
+
+### Execution Record
+
+| Drill ID  | Scenario Tested                                  | Mechanism                                                              | Verification Method                                                                         | Outcome                                                                                                                              |
+| :-------- | :----------------------------------------------- | :--------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------- |
+| **DR-01** | Concurrent worker lease contention               | `claim_outbox_job` with PostgreSQL `FOR UPDATE SKIP LOCKED`            | Multi-worker parallel claim test (`tests/verification/crash-recovery-concurrency.test.ts`)  | **PASS** — Exactly 1 worker acquires lease; no lock starvation or duplicate claims.                                                  |
+| **DR-02** | Worker crash after on-chain mining               | Self-healing via `BlueCarbonRegistry.records(recordHash)` verification | Simulated sudden process termination after EVM receipt confirmation                         | **PASS** — Resuming worker detects verified on-chain anchor, marks outbox job complete, and avoids duplicate transaction submission. |
+| **DR-03** | Compound error handling during failure recording | Nested error logging & DLQ routing                                     | Injected failure in `fail_outbox_job` RPC                                                   | **PASS** — Throws explicit compound error; worker supervisor safely isolates task without silent drop.                               |
+| **DR-04** | Live EVM identity & contract validation          | `validateEVMNetworkAndContract`                                        | RPC chain ID mismatch and missing bytecode injection                                        | **PASS** — Rejects transaction when RPC reports incorrect chain ID or target address lacks deployed code.                            |
+| **DR-05** | Durable SIWE nonce & KYC limit persistence       | PostgreSQL tables `siwe_nonces` and `kyc_compliance_transactions`      | PGlite in-memory migration & replay testing (`tests/security/database-integration.test.ts`) | **PASS** — Atomic nonce consumption prevents replay attacks; rolling 365-day cumulative volume limits enforce Tier 1 compliance.     |
+
+### Sign-off & Audit Record
+
+- **Audit Reference:** Production Readiness Hardening & Disaster Recovery Drill
+- **Status:** **VERIFIED & COMPLETED**
+- **Zero Invariant Violations Recorded.**

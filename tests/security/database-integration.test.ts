@@ -689,3 +689,75 @@ test("DB Integration: complete_outbox_job explicitly marks job complete and clea
     await db.query(`SELECT public.complete_outbox_job('${otherJobId}', '${txHash}');`);
   }, /Integrity Error: Cannot complete outbox job with unverified transaction hash/);
 });
+
+test("DB Integration: Durable shared SIWE nonces and KYC cumulative ledger prevent replay and smurfing in PostgreSQL", async () => {
+  const db = await initTestDatabase();
+
+  // 1. SIWE: Issue nonce into shared DB table
+  const testNonce = "abcdef1234567890abcdef1234567890";
+  const boundWallet = "0x1111111111111111111111111111111111111111";
+  await db.query(`
+    INSERT INTO public.siwe_nonces (nonce, bound_address, expires_at)
+    VALUES ('${testNonce}', '${boundWallet}', now() + interval '5 minutes');
+  `);
+
+  // 2. First consumption: returns true
+  const res1 = await db.query(
+    `SELECT public.consume_siwe_nonce('${testNonce}', '${boundWallet}') as ok;`,
+  );
+  assert.strictEqual(res1.rows[0].ok, true, "First consumption must return true");
+
+  // 3. Second consumption (replay attack): returns false atomically
+  const res2 = await db.query(
+    `SELECT public.consume_siwe_nonce('${testNonce}', '${boundWallet}') as ok;`,
+  );
+  assert.strictEqual(
+    res2.rows[0].ok,
+    false,
+    "Second consumption must return false (replay prevented)",
+  );
+
+  // 4. Mismatched address consumption: returns false
+  const otherNonce = "1234567890abcdef1234567890abcdef";
+  await db.query(`
+    INSERT INTO public.siwe_nonces (nonce, bound_address, expires_at)
+    VALUES ('${otherNonce}', '${boundWallet}', now() + interval '5 minutes');
+  `);
+  const mismatchRes = await db.query(
+    `SELECT public.consume_siwe_nonce('${otherNonce}', '0x2222222222222222222222222222222222222222') as ok;`,
+  );
+  assert.strictEqual(mismatchRes.rows[0].ok, false, "Mismatched address must return false");
+
+  // 5. KYC Compliance: record transactions in shared DB ledger
+  const kycWallet = "0x3333333333333333333333333333333333333333";
+  await db.query(
+    `SELECT public.record_compliance_transaction('${kycWallet}', 'PURCHASE', 600000);`,
+  );
+  await db.query(
+    `SELECT public.record_compliance_transaction('${kycWallet}', 'TRANSFER', 300000);`,
+  );
+
+  // Query cumulative 365-day volume
+  const cumRes = await db.query(
+    `SELECT public.get_cumulative_annual_volume('${kycWallet}') as vol;`,
+  );
+  assert.strictEqual(
+    BigInt(cumRes.rows[0].vol),
+    900000n,
+    "Cumulative volume reflects total of 900,000 milli-tCO2e",
+  );
+
+  // Old transaction (> 365 days ago) is excluded
+  await db.query(`
+    INSERT INTO public.kyc_compliance_transactions (wallet_address, action, amount_milli_tco2e, timestamp)
+    VALUES (lower('${kycWallet}'), 'PURCHASE', 500000, now() - interval '400 days');
+  `);
+  const cumAfterOldRes = await db.query(
+    `SELECT public.get_cumulative_annual_volume('${kycWallet}') as vol;`,
+  );
+  assert.strictEqual(
+    BigInt(cumAfterOldRes.rows[0].vol),
+    900000n,
+    "Expired rolling window transaction is excluded",
+  );
+});

@@ -17,6 +17,7 @@ import {
   canonicalize,
   readEvmConfig,
   sha256Hex,
+  validateEVMNetworkAndContract,
 } from "../lib/blockchain.server.ts";
 import { logger } from "../lib/observability.ts";
 import type { VerifierClient } from "../lib/registry.server.ts";
@@ -65,6 +66,17 @@ export async function runDisasterRecoveryReconciliation(): Promise<Reconciliatio
       );
     } else {
       const provider = new ethers.JsonRpcProvider(evm.rpcUrl);
+      const validation = await validateEVMNetworkAndContract({
+        provider,
+        contractAddress: evm.contract,
+        expectedChainId: evm.expectedChainId,
+      });
+
+      if (!validation.isValid) {
+        report.errors.push(`Disaster recovery aborted: ${validation.error}`);
+        return report;
+      }
+
       const contract = new ethers.Contract(evm.contract, BLUE_CARBON_REGISTRY_ABI, provider);
 
       for (const proj of pendingProjects || []) {

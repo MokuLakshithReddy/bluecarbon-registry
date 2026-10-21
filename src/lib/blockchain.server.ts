@@ -229,6 +229,104 @@ function getJsonRpcProvider(cfg: EvmConfig): ethers.JsonRpcProvider {
   return new ethers.JsonRpcProvider(cfg.rpcUrl, net, { staticNetwork: net });
 }
 
+export interface EvmRpcLikeProvider {
+  send?: (method: string, params: unknown[]) => Promise<unknown>;
+  getNetwork: () => Promise<{ chainId: bigint | number }>;
+  getCode: (address: string) => Promise<string | null | undefined>;
+  getBlockNumber: () => Promise<number>;
+}
+
+export interface EvmValidationParams {
+  provider: ethers.Provider | ethers.JsonRpcProvider | EvmRpcLikeProvider;
+  contractAddress: string;
+  expectedChainId?: number | undefined;
+  minBytecodeLength?: number | undefined;
+}
+
+export interface EvmValidationStatus {
+  isValid: boolean;
+  chainId: number;
+  hasBytecode: boolean;
+  bytecodeLength: number;
+  blockNumber: number;
+  error?: string | undefined;
+}
+
+/**
+ * Unified EVM network identity and contract deployment validation.
+ * Uniformly validates chain ID, bytecode deployment, and RPC block sync across
+ * transaction execution, verification, and disaster recovery.
+ */
+export async function validateEVMNetworkAndContract(
+  params: EvmValidationParams,
+): Promise<EvmValidationStatus> {
+  const { provider, contractAddress, expectedChainId, minBytecodeLength = 2 } = params;
+
+  if (!ethers.isAddress(contractAddress)) {
+    return {
+      isValid: false,
+      chainId: 0,
+      hasBytecode: false,
+      bytecodeLength: 0,
+      blockNumber: 0,
+      error: `Invalid EVM contract address format: '${contractAddress}'.`,
+    };
+  }
+
+  const rpcProvider = provider as unknown as EvmRpcLikeProvider;
+
+  // 1. Query live eth_chainId from RPC server and enforce exact match
+  let chainId = 0;
+  try {
+    if (typeof rpcProvider.send === "function") {
+      const hexChainId = (await rpcProvider.send("eth_chainId", [])) as string | number;
+      chainId = typeof hexChainId === "string" ? parseInt(hexChainId, 16) : Number(hexChainId);
+    } else {
+      const network = await rpcProvider.getNetwork();
+      chainId = Number(network.chainId);
+    }
+  } catch {
+    const network = await rpcProvider.getNetwork();
+    chainId = Number(network.chainId);
+  }
+
+  if (expectedChainId && chainId !== expectedChainId) {
+    return {
+      isValid: false,
+      chainId,
+      hasBytecode: false,
+      bytecodeLength: 0,
+      blockNumber: 0,
+      error: `Chain ID mismatch: connected RPC reported ${chainId}, expected ${expectedChainId}.`,
+    };
+  }
+
+  // 2. Query eth_getCode and enforce deployed bytecode existence
+  const deployedCode = (await rpcProvider.getCode(contractAddress)) as string | null | undefined;
+  const codeLength = deployedCode ? deployedCode.length : 0;
+  if (!deployedCode || deployedCode === "0x" || codeLength <= minBytecodeLength) {
+    return {
+      isValid: false,
+      chainId,
+      hasBytecode: false,
+      bytecodeLength: codeLength,
+      blockNumber: 0,
+      error: `No contract bytecode deployed at address ${contractAddress} on chain ${chainId}.`,
+    };
+  }
+
+  // 3. Query current block number
+  const blockNumber = Number(await rpcProvider.getBlockNumber());
+
+  return {
+    isValid: true,
+    chainId,
+    hasBytecode: true,
+    bytecodeLength: codeLength,
+    blockNumber,
+  };
+}
+
 export { createRealEvmProvider as createEvmProvider };
 export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
   return {
@@ -251,23 +349,14 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
       try {
         const provider = getJsonRpcProvider(cfg);
 
-        // 1. Query live eth_chainId from endpoint and compare with expectedChainId
-        const hexChainId = (await provider.send("eth_chainId", [])) as string;
-        const liveChainId = parseInt(hexChainId, 16);
-        if (cfg.expectedChainId && liveChainId !== cfg.expectedChainId) {
-          return {
-            tx_hash: "",
-            block_number: null,
-            network: cfg.network,
-            status: "FAILED",
-            simulated: false,
-            explorer_url: null,
-            error: `Chain ID mismatch: connected RPC reported ${liveChainId}, expected ${cfg.expectedChainId}.`,
-          };
-        }
+        // Unified EVM network identity and contract deployment validation
+        const validation = await validateEVMNetworkAndContract({
+          provider,
+          contractAddress: cfg.contract,
+          expectedChainId: cfg.expectedChainId,
+        });
 
-        // 2. Validate contract address format and deployed bytecode presence
-        if (!ethers.isAddress(cfg.contract)) {
+        if (!validation.isValid) {
           return {
             tx_hash: "",
             block_number: null,
@@ -275,20 +364,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
             status: "FAILED",
             simulated: false,
             explorer_url: null,
-            error: `Invalid contract address format: ${cfg.contract}.`,
-          };
-        }
-
-        const deployedCode = await provider.getCode(cfg.contract);
-        if (!deployedCode || deployedCode === "0x") {
-          return {
-            tx_hash: "",
-            block_number: null,
-            network: cfg.network,
-            status: "FAILED",
-            simulated: false,
-            explorer_url: null,
-            error: `No contract bytecode deployed at address ${cfg.contract}.`,
+            error: validation.error ?? "EVM contract validation failed",
           };
         }
 
@@ -556,29 +632,14 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
       try {
         const provider = getJsonRpcProvider(cfg);
 
-        // 1. Live chain ID check
-        if (cfg.expectedChainId) {
-          const hexChainId = (await provider.send("eth_chainId", [])) as string;
-          const liveChainId = parseInt(hexChainId, 16);
-          if (liveChainId !== cfg.expectedChainId) {
-            return {
-              isVerified: false,
-              txHash,
-              recordHash,
-              blockNumber: null,
-              confirmations: 0,
-              network: cfg.network,
-              simulated: false,
-              receiptStatus: "NOT_FOUND",
-              verifiedAt: new Date().toISOString(),
-              error: `Chain ID mismatch on verification: connected RPC reported ${liveChainId}, expected ${cfg.expectedChainId}.`,
-            };
-          }
-        }
+        // Unified EVM network identity and contract deployment validation
+        const validation = await validateEVMNetworkAndContract({
+          provider,
+          contractAddress: cfg.contract,
+          expectedChainId: cfg.expectedChainId,
+        });
 
-        // 2. Deployed contract bytecode check
-        const deployedCode = await provider.getCode(cfg.contract);
-        if (!deployedCode || deployedCode === "0x") {
+        if (!validation.isValid) {
           return {
             isVerified: false,
             txHash,
@@ -589,7 +650,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
             simulated: false,
             receiptStatus: "NOT_FOUND",
             verifiedAt: new Date().toISOString(),
-            error: `Contract bytecode missing at address ${cfg.contract}.`,
+            error: validation.error ?? "EVM contract validation failed",
           };
         }
 

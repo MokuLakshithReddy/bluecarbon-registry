@@ -43,7 +43,8 @@ contract BlueCarbonRegistry {
         REVOKE_VERIFIER,
         GRANT_ROLE,
         REVOKE_ROLE,
-        TRANSFER_OWNERSHIP
+        TRANSFER_OWNERSHIP,
+        SET_TIMELOCK_ENFORCEMENT
     }
 
     // -------------------------------------------------------------------------
@@ -244,6 +245,7 @@ contract BlueCarbonRegistry {
     }
 
     function setTimelockEnforcement(bool enforced) external onlyOwner {
+        if (timelockEnforced) revert TimelockEnforcedUseQueuedAction();
         timelockEnforced = enforced;
         emit TimelockEnforcementUpdated(enforced);
     }
@@ -291,6 +293,12 @@ contract BlueCarbonRegistry {
         if (newOwner == address(0)) revert ZeroAddress();
         address oldOwner = owner;
         owner = newOwner;
+        if (oldOwner != newOwner) {
+            _roles[DEFAULT_ADMIN_ROLE][oldOwner] = false;
+            _roles[VERIFIER_ROLE][oldOwner] = false;
+            isAuthorizedVerifier[oldOwner] = false;
+            emit RoleRevoked(DEFAULT_ADMIN_ROLE, oldOwner, msg.sender);
+        }
         _roles[DEFAULT_ADMIN_ROLE][newOwner] = true;
         emit OwnershipTransferred(oldOwner, newOwner);
     }
@@ -311,7 +319,9 @@ contract BlueCarbonRegistry {
         address target,
         bytes32 role
     ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32 actionHash) {
-        if (target == address(0)) revert ZeroAddress();
+        if (actionType != AdminActionType.SET_TIMELOCK_ENFORCEMENT && target == address(0)) {
+            revert ZeroAddress();
+        }
         actionHash = computeActionHash(actionType, target, role);
         if (queuedActions[actionHash].readyTimestamp != 0 && !queuedActions[actionHash].executed) {
             revert ActionAlreadyQueued(actionHash);
@@ -369,8 +379,18 @@ contract BlueCarbonRegistry {
         } else if (actionType == AdminActionType.TRANSFER_OWNERSHIP) {
             address oldOwner = owner;
             owner = target;
+            if (oldOwner != target) {
+                _roles[DEFAULT_ADMIN_ROLE][oldOwner] = false;
+                _roles[VERIFIER_ROLE][oldOwner] = false;
+                isAuthorizedVerifier[oldOwner] = false;
+                emit RoleRevoked(DEFAULT_ADMIN_ROLE, oldOwner, msg.sender);
+            }
             _roles[DEFAULT_ADMIN_ROLE][target] = true;
             emit OwnershipTransferred(oldOwner, target);
+        } else if (actionType == AdminActionType.SET_TIMELOCK_ENFORCEMENT) {
+            bool newEnforced = (target != address(0));
+            timelockEnforced = newEnforced;
+            emit TimelockEnforcementUpdated(newEnforced);
         }
 
         emit AdminActionExecuted(actionHash, uint8(actionType), target, role);
