@@ -152,12 +152,14 @@ export function scanGitHistory(): { findings: Finding[]; error?: string } {
       }
       if (!line.startsWith("+") || line.startsWith("+++")) continue;
 
-      // Skip self-files documenting regexes
+      // Skip self-files documenting regexes and configuration allowlists
       if (
         currentFile.includes("scripts/security-audit.ts") ||
         currentFile.includes("src/lib/observability.ts") ||
         currentFile.includes("secret-audit-canary.test.ts") ||
-        currentFile.endsWith(".example")
+        currentFile.endsWith(".example") ||
+        currentFile.includes(".gitleaks.toml") ||
+        IGNORED_PATHS.some((p) => currentFile === p || currentFile.endsWith(`/${p}`))
       ) {
         continue;
       }
