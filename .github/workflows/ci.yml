@@ -45,7 +45,12 @@ jobs:
         run: npm run lint
 
       - name: Run security audit and secret scanner (blocking)
+        env:
+          STRICT_AUDIT: "true"
         run: npm run audit:security
+
+      - name: Run compilation & contract validation
+        run: node --experimental-strip-types tests/blockchain/contract-solidity.test.ts
 
   build:
     name: Production Build Verification

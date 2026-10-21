@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
+// @ts-expect-error - solc is a CJS compiler module
+import solc from "solc";
 import {
   BLUE_CARBON_REGISTRY_ABI,
   toMilliTco2e,
@@ -13,6 +15,68 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const CONTRACT_SOURCE_PATH = path.resolve(__dirname, "../../contracts/BlueCarbonRegistry.sol");
+
+test("Contract Compilation: BlueCarbonRegistry.sol compiles cleanly with solc compiler and generates bytecode", () => {
+  assert.ok(fs.existsSync(CONTRACT_SOURCE_PATH), "Contract source file must exist");
+  const source = fs.readFileSync(CONTRACT_SOURCE_PATH, "utf-8");
+
+  const input = {
+    language: "Solidity",
+    sources: {
+      "BlueCarbonRegistry.sol": {
+        content: source,
+      },
+    },
+    settings: {
+      outputSelection: {
+        "*": {
+          "*": ["abi", "evm.bytecode"],
+        },
+      },
+    },
+  };
+
+  const output = JSON.parse(solc.compile(JSON.stringify(input)));
+
+  // Ensure no compilation errors
+  if (output.errors) {
+    const fatalErrors = output.errors.filter((e: { severity: string }) => e.severity === "error");
+    assert.strictEqual(
+      fatalErrors.length,
+      0,
+      `Solidity compilation failed with errors: ${JSON.stringify(fatalErrors)}`,
+    );
+  }
+
+  const contract = output.contracts?.["BlueCarbonRegistry.sol"]?.["BlueCarbonRegistry"];
+  assert.ok(contract, "Compiled contract artifact BlueCarbonRegistry must exist");
+  assert.ok(contract.evm?.bytecode?.object, "Must generate EVM bytecode");
+  assert.ok(
+    contract.evm.bytecode.object.length > 100,
+    "Bytecode must be non-trivial compiled EVM binary",
+  );
+
+  // Validate that generated ABI contains critical registry functions
+  const compiledAbi = contract.abi as Array<{ name?: string; type: string }>;
+  const functionNames = compiledAbi
+    .filter((item) => item.type === "function")
+    .map((item) => item.name);
+  assert.ok(functionNames.includes("anchorRecord"), "Compiled ABI must have anchorRecord");
+  assert.ok(
+    functionNames.includes("authorizeVerifier"),
+    "Compiled ABI must have authorizeVerifier",
+  );
+  assert.ok(functionNames.includes("revokeVerifier"), "Compiled ABI must have revokeVerifier");
+  assert.ok(functionNames.includes("verifyRecord"), "Compiled ABI must have verifyRecord");
+  assert.ok(functionNames.includes("getLatestAnchor"), "Compiled ABI must have getLatestAnchor");
+
+  // Validate that event RecordAnchored is present in compiled ABI
+  const eventNames = compiledAbi.filter((item) => item.type === "event").map((item) => item.name);
+  assert.ok(
+    eventNames.includes("RecordAnchored"),
+    "Compiled ABI must include RecordAnchored event",
+  );
+});
 
 test("Contract Source: BlueCarbonRegistry.sol contains RBAC and fixed-point precision", () => {
   assert.ok(fs.existsSync(CONTRACT_SOURCE_PATH), "Contract source file must exist");

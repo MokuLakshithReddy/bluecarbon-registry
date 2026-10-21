@@ -221,20 +221,23 @@ if (
   import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}` ||
   process.argv[1]?.endsWith("smoke-test.ts")
 ) {
-  const isStrict = process.argv.includes("--strict") || process.env["SMOKE_STRICT"] === "true";
-  console.log(`=== Running Staging / Production Smoke Tests (Strict: ${isStrict}) ===`);
-  runSmokeTests({ checkBlockchain: process.argv.includes("--blockchain") }).then(
-    ({ allPassed, checks }) => {
-      for (const c of checks) {
-        console.log(
-          `[${c.passed ? "PASS" : "FAIL"}] ${c.name} (${c.durationMs}ms): ${c.details ?? ""}`,
-        );
-      }
-      console.log("================================================");
-      console.log(allPassed ? "Smoke verification PASSED." : "Smoke verification FAILED.");
-      if (isStrict && !allPassed) {
-        process.exit(1);
-      }
-    },
-  );
+  // Strict mode is ENABLED by default; use --permissive or SMOKE_STRICT=false only for non-blocking local observation
+  const isStrict =
+    !process.argv.includes("--permissive") && process.env["SMOKE_STRICT"] !== "false";
+  console.log(`=== Running Staging / Production Smoke Tests (Strict Mode: ${isStrict}) ===`);
+  runSmokeTests({
+    checkBlockchain:
+      process.argv.includes("--blockchain") || process.env["CHECK_BLOCKCHAIN"] === "true",
+  }).then(({ allPassed, checks }) => {
+    for (const c of checks) {
+      console.log(
+        `[${c.passed ? "PASS" : "FAIL"}] ${c.name} (${c.durationMs}ms): ${c.details ?? ""}`,
+      );
+    }
+    console.log("================================================");
+    console.log(allPassed ? "Smoke verification PASSED." : "Smoke verification FAILED.");
+    if (isStrict && !allPassed) {
+      process.exit(1);
+    }
+  });
 }
