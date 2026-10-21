@@ -8,12 +8,12 @@
 
 > **Trusted Monitoring, Reporting & Verification (MRV) for India's Blue Carbon Ecosystems**
 >
-> A production-quality MVP aligned with the Ministry of Earth Sciences (MoES) problem statement — *"Blockchain-Based Blue Carbon Registry and MRV System"*. The system creates an end-to-end digital workflow: field evidence capture → automated validation → human/NCCR verifier review → immutable blockchain anchoring → verified carbon impact calculation.
+> A production-quality MVP aligned with the Ministry of Earth Sciences (MoES) problem statement — _"Blockchain-Based Blue Carbon Registry and MRV System"_. The system creates an end-to-end digital workflow: field evidence capture → automated validation → human/NCCR verifier review → immutable blockchain anchoring → verified carbon impact calculation.
 
 ---
 
 > [!IMPORTANT]
-> **Regulatory Disclaimer:** This application records *Verified Carbon Impact* ($\text{tCO}_2\text{e}$) calculated via IPCC Wetlands Supplement defaults for demonstration and verification purposes. It does **not** issue real regulatory carbon credits. Actual carbon-credit issuance requires an approved methodology, an authorised verification body, and compliance with national/international registry frameworks.
+> **Regulatory Disclaimer:** This application records _Verified Carbon Impact_ ($\text{tCO}_2\text{e}$) calculated via IPCC Wetlands Supplement defaults for demonstration and verification purposes. It does **not** issue real regulatory carbon credits. Actual carbon-credit issuance requires an approved methodology, an authorised verification body, and compliance with national/international registry frameworks.
 
 ---
 
@@ -38,6 +38,7 @@
   - [Testing & Quality Gates](#testing--quality-gates)
   - [Production Readiness Audit & Remediations](#production-readiness-audit--remediations)
 - [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -94,18 +95,18 @@ The **BlueCarbon Registry** solves these challenges by combining cryptographic e
 
 To maintain full transparency, the matrix below details the operational status of each capability across the platform:
 
-| Capability / Feature | Status | Operational Details |
-| :--- | :--- | :--- |
-| **Evidence SHA-256 & URI Binding** | ✅ Implemented | Fail-closed evidence validation and cross-project URI matching in `src/lib/registry.server.ts`. |
-| **Database RLS & Identity RPCs** | ✅ Implemented | PostgreSQL Row-Level Security and `SECURITY DEFINER` procedures in Supabase migrations. |
-| **IPCC Methodology Engine** | ✅ Implemented | Biomass & soil accretion formulas with 15% risk buffer and methane deduction in `src/lib/carbon.ts`. |
-| **Smart Contract (`BlueCarbonRegistry.sol`)** | ✅ Implemented | RBAC-protected EVM anchoring contract with fixed-point milli$\text{tCO}_2\text{e}$ precision. |
-| **In-Process EVM Execution Tests** | ✅ Implemented | Tested against `@ethereumjs/vm` in `tests/blockchain/contract-solidity.test.ts`. |
-| **Real EVM Network Anchoring** | ⚙️ Configurable | Submits signed EVM transactions when RPC node credentials are set; falls back to simulated mode when omitted. |
-| **SIWE (Sign-In With Ethereum)** | ✅ Implemented | EIP-4361 authentication with atomic database nonce persistence. |
-| **IoT / Drone Telemetry ECDSA** | 🧪 Unit-Tested | Validated in unit test suite (`tests/evidence/telemetry-crypto.test.ts`). |
-| **Decentralized Storage (IPFS / Arweave)** | 🧪 Unit-Tested | Gateway resolution and multihash verification tested in `tests/evidence/decentralized-storage.test.ts`. |
-| **Demo Account Quick-Login** | 🔒 Gated | Restricted strictly to non-production development environments via `VITE_ALLOW_DEMO_LOGIN`. |
+| Capability / Feature                          | Status          | Operational Details                                                                                           |
+| :-------------------------------------------- | :-------------- | :------------------------------------------------------------------------------------------------------------ |
+| **Evidence SHA-256 & URI Binding**            | ✅ Implemented  | Fail-closed evidence validation and cross-project URI matching in `src/lib/registry.server.ts`.               |
+| **Database RLS & Identity RPCs**              | ✅ Implemented  | PostgreSQL Row-Level Security and `SECURITY DEFINER` procedures in Supabase migrations.                       |
+| **IPCC Methodology Engine**                   | ✅ Implemented  | Biomass & soil accretion formulas with 15% risk buffer and methane deduction in `src/lib/carbon.ts`.          |
+| **Smart Contract (`BlueCarbonRegistry.sol`)** | ✅ Implemented  | RBAC-protected EVM anchoring contract with fixed-point milli$\text{tCO}_2\text{e}$ precision.                 |
+| **In-Process EVM Execution Tests**            | ✅ Implemented  | Tested against `@ethereumjs/vm` in `tests/blockchain/contract-solidity.test.ts`.                              |
+| **Real EVM Network Anchoring**                | ⚙️ Configurable | Submits signed EVM transactions when RPC node credentials are set; falls back to simulated mode when omitted. |
+| **SIWE (Sign-In With Ethereum)**              | ✅ Implemented  | EIP-4361 authentication with atomic database nonce persistence.                                               |
+| **IoT / Drone Telemetry ECDSA**               | 🧪 Unit-Tested  | Validated in unit test suite (`tests/evidence/telemetry-crypto.test.ts`).                                     |
+| **Decentralized Storage (IPFS / Arweave)**    | 🧪 Unit-Tested  | Gateway resolution and multihash verification tested in `tests/evidence/decentralized-storage.test.ts`.       |
+| **Demo Account Quick-Login**                  | 🔒 Gated        | Restricted strictly to non-production development environments via `VITE_ALLOW_DEMO_LOGIN`.                   |
 
 ---
 
@@ -153,16 +154,16 @@ To maintain full transparency, the matrix below details the operational status o
 
 ## Tech Stack
 
-| Layer | Technology | Description |
-| :--- | :--- | :--- |
-| **Web Framework** | TanStack Start (React 19, Vite 6) | Full-stack SSR and route handling |
-| **Language** | TypeScript 5.8 | End-to-end static type safety |
-| **Database & Auth** | Supabase (PostgreSQL 15, Auth, Storage) | Relational database with Row-Level Security policies |
-| **Blockchain** | Solidity `^0.8.20`, ethers v6, `@ethereumjs/vm` | EVM smart contract anchoring and in-process execution tests |
-| **UI Components** | Tailwind CSS v4, Radix UI, Lucide Icons | Responsive accessible interface design |
-| **Geospatial & Charts** | Leaflet, React-Leaflet, Recharts | Interactive map boundary plotting and analytics |
-| **Test Runner** | Node.js built-in test runner (`node:test`) | Fast native test execution without external runners |
-| **CI / CD** | GitHub Actions | Automated linting, typechecking, security scanning, and testing |
+| Layer                   | Technology                                      | Description                                                     |
+| :---------------------- | :---------------------------------------------- | :-------------------------------------------------------------- |
+| **Web Framework**       | TanStack Start (React 19, Vite 6)               | Full-stack SSR and route handling                               |
+| **Language**            | TypeScript 5.8                                  | End-to-end static type safety                                   |
+| **Database & Auth**     | Supabase (PostgreSQL 15, Auth, Storage)         | Relational database with Row-Level Security policies            |
+| **Blockchain**          | Solidity `^0.8.20`, ethers v6, `@ethereumjs/vm` | EVM smart contract anchoring and in-process execution tests     |
+| **UI Components**       | Tailwind CSS v4, Radix UI, Lucide Icons         | Responsive accessible interface design                          |
+| **Geospatial & Charts** | Leaflet, React-Leaflet, Recharts                | Interactive map boundary plotting and analytics                 |
+| **Test Runner**         | Node.js built-in test runner (`node:test`)      | Fast native test execution without external runners             |
+| **CI / CD**             | GitHub Actions                                  | Automated linting, typechecking, security scanning, and testing |
 
 ---
 
@@ -185,7 +186,7 @@ Deep-dive architecture specifications, security reviews, and operational runbook
 - **Node.js**: $\ge 22.0.0$ (required for native test runner features and ESM compatibility)
 - **npm**: $\ge 10.0.0$
 - **Supabase Account**: A Supabase project (free tier is fully supported for local development)
-- *(Optional)* **EVM RPC Endpoint**: Funded wallet private key and RPC URL for live blockchain testnet anchoring.
+- _(Optional)_ **EVM RPC Endpoint**: Funded wallet private key and RPC URL for live blockchain testnet anchoring.
 
 ### Installation
 
@@ -216,10 +217,11 @@ npm run seed:demo
 ```
 
 This creates the default demo accounts:
+
 - **Project Owner:** `owner@bluecarbon.demo`
 - **NCCR Verifier:** `verifier@nccr.demo`
 
-*(Note: Demo login features are strictly disabled when running in production modes).*
+_(Note: Demo login features are strictly disabled when running in production modes)._
 
 ---
 
@@ -366,12 +368,12 @@ $$\text{Annual Carbon Sequestration } (\text{tCO}_2\text{e}/\text{yr}) = \text{A
 
 ### Default IPCC Coefficients
 
-| Coastal Biome | Biomass Growth ($\text{tC/ha/yr}$) | Soil Accretion ($\text{tC/ha/yr}$) | Baseline Buffer Deduction |
-| :--- | :--- | :--- | :--- |
-| **Mangrove** | $3.14$ | $0.235$ | $15\%$ (Verra AFOLU Risk Standard) |
-| **Seagrass** | $0.58$ | $0.149$ | $15\%$ |
-| **Salt Marsh** | $1.84$ | $0.218$ | $15\%$ |
-| **Coastal Wetland** | $0.97$ | $0.172$ | $15\%$ |
+| Coastal Biome       | Biomass Growth ($\text{tC/ha/yr}$) | Soil Accretion ($\text{tC/ha/yr}$) | Baseline Buffer Deduction          |
+| :------------------ | :--------------------------------- | :--------------------------------- | :--------------------------------- |
+| **Mangrove**        | $3.14$                             | $0.235$                            | $15\%$ (Verra AFOLU Risk Standard) |
+| **Seagrass**        | $0.58$                             | $0.149$                            | $15\%$                             |
+| **Salt Marsh**      | $1.84$                             | $0.218$                            | $15\%$                             |
+| **Coastal Wetland** | $0.97$                             | $0.172$                            | $15\%$                             |
 
 - **Methane ($\text{CH}_4$) Adjustment:** For brackish or low-salinity sites ($< 18\text{ ppt}$), a methane deduction of $5.42\text{ tCO}_2\text{e/ha/yr}$ ($193.7\text{ kg CH}_4\text{/ha/yr} \times 28\text{ GWP-100}$) is applied.
 
@@ -411,18 +413,18 @@ npm run audit:security
 
 > **Current Status:** **173 passing tests across 21 test suites** (0 failing).
 >
-> *Note on Metrics:* This test count represents automated local and CI verification across all domain modules. It serves as a regression prevention suite and code quality gate rather than a third-party security certification.
+> _Note on Metrics:_ This test count represents automated local and CI verification across all domain modules. It serves as a regression prevention suite and code quality gate rather than a third-party security certification.
 
-| Test Suite Module | Test Count | Key Areas Covered |
-| :--- | :---: | :--- |
-| `tests/blockchain/` | 28 | EVM provider, receipt verification, batch minting, buffer pool, retirement, timelock governance |
-| `tests/deployment/` | 4 | RPC failover, wrong chain ID handling, missing bytecode resilience, timeout handling |
-| `tests/evidence/` | 50 | SHA-256 integrity, cross-project URI binding, IPFS/Arweave resolution, telemetry ECDSA |
-| `tests/scientific/` | 9 | IPCC coefficients, methane adjustments, Tier 1/2/3 downgrades, date boundary logic |
-| `tests/security/` | 32 | SIWE nonces, PGlite DB RLS, identity RPC checks, secret scanning, threat modeling, IDOR |
-| `tests/validation/` | 12 | Geo boundary ray-casting, double-registration collisions, Haversine metrics, EQS scoring |
-| `tests/verification/` | 18 | Workflow state machine, crash recovery, outbox concurrency safety, compound error handling |
-| `tests/compliance/` & `quality/` | 20 | KYC volume limits, WCAG AA contrast compliance, performance latency bounds ($< 50\text{ms}$) |
+| Test Suite Module                | Test Count | Key Areas Covered                                                                               |
+| :------------------------------- | :--------: | :---------------------------------------------------------------------------------------------- |
+| `tests/blockchain/`              |     28     | EVM provider, receipt verification, batch minting, buffer pool, retirement, timelock governance |
+| `tests/deployment/`              |     4      | RPC failover, wrong chain ID handling, missing bytecode resilience, timeout handling            |
+| `tests/evidence/`                |     50     | SHA-256 integrity, cross-project URI binding, IPFS/Arweave resolution, telemetry ECDSA          |
+| `tests/scientific/`              |     9      | IPCC coefficients, methane adjustments, Tier 1/2/3 downgrades, date boundary logic              |
+| `tests/security/`                |     32     | SIWE nonces, PGlite DB RLS, identity RPC checks, secret scanning, threat modeling, IDOR         |
+| `tests/validation/`              |     12     | Geo boundary ray-casting, double-registration collisions, Haversine metrics, EQS scoring        |
+| `tests/verification/`            |     18     | Workflow state machine, crash recovery, outbox concurrency safety, compound error handling      |
+| `tests/compliance/` & `quality/` |     20     | KYC volume limits, WCAG AA contrast compliance, performance latency bounds ($< 50\text{ms}$)    |
 
 ---
 
@@ -460,3 +462,9 @@ During system hardening, 16 findings identified across security, database isolat
 4. Open a Pull Request against `main`. All GitHub Actions CI checks must pass prior to review approval.
 
 For sensitive security findings, please submit a private advisory rather than opening a public issue.
+
+---
+
+## License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
