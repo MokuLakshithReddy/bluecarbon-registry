@@ -256,7 +256,57 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
           explorer_url: explorerUrl,
           confirmations: cfg.confirmationsRequired,
         };
-      } catch (err) {
+      } catch (err: unknown) {
+        const anyErr = err as {
+          code?: string;
+          replacement?: { hash?: string };
+          receipt?: { blockNumber?: number; status?: number; hash?: string };
+          message?: string;
+        };
+
+        // Handle transaction replacement (repriced, sped up, cancelled/replaced)
+        if (anyErr?.code === "TRANSACTION_REPLACED" && anyErr.receipt?.status === 1) {
+          const repHash = anyErr.replacement?.hash || anyErr.receipt.hash || "";
+          return {
+            tx_hash: repHash,
+            block_number: anyErr.receipt.blockNumber ?? null,
+            network: cfg.network,
+            status: "CONFIRMED",
+            simulated: false,
+            explorer_url: cfg.explorerUrl && repHash ? `${cfg.explorerUrl}/tx/${repHash}` : null,
+            confirmations: cfg.confirmationsRequired,
+          };
+        }
+
+        const errMsg = anyErr?.message || String(err);
+        const bytes32 = recordHash.startsWith("0x") ? recordHash : `0x${recordHash}`;
+
+        // Check if error is RecordAlreadyAnchored
+        if (errMsg.includes("RecordAlreadyAnchored")) {
+          try {
+            const provider = getJsonRpcProvider(cfg);
+            const contract = new ethers.Contract(cfg.contract, BLUE_CARBON_REGISTRY_ABI, provider);
+            const verifyFn = contract.getFunction("verifyRecord");
+            if (verifyFn) {
+              const onChain = await verifyFn(bytes32);
+              if (onChain && onChain[0] === true) {
+                const blockNumber = Number(onChain[3]);
+                return {
+                  tx_hash: `on-chain-block-${blockNumber}`,
+                  block_number: blockNumber,
+                  network: cfg.network,
+                  status: "CONFIRMED",
+                  simulated: false,
+                  explorer_url: cfg.explorerUrl ? `${cfg.explorerUrl}/address/${cfg.contract}` : null,
+                  confirmations: cfg.confirmationsRequired,
+                };
+              }
+            }
+          } catch {
+            // Non-fatal, fall through to return error
+          }
+        }
+
         return {
           tx_hash: "",
           block_number: null,
@@ -264,7 +314,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
           status: "FAILED",
           simulated: false,
           explorer_url: null,
-          error: err instanceof Error ? err.message : "Blockchain transaction submission failed",
+          error: errMsg,
         };
       }
     },

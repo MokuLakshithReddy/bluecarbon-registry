@@ -13,7 +13,11 @@
     "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "seed:demo": "node --experimental-strip-types scripts/seed-demo-accounts.ts",
-    "worker:outbox": "node --experimental-strip-types src/workers/outbox-worker.ts"
+    "worker:outbox": "node --experimental-strip-types src/workers/outbox-worker.ts",
+    "audit:security": "node --experimental-strip-types scripts/security-audit.ts",
+    "validate:db": "node --experimental-strip-types scripts/validate-live-db.ts",
+    "reconcile:state": "node --experimental-strip-types scripts/disaster-recovery-reconcile.ts",
+    "smoke:test": "node --experimental-strip-types scripts/smoke-test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

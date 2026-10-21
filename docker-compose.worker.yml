@@ -1,0 +1,39 @@
+services:
+  outbox-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: bluecarbon-outbox-worker
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - BLOCKCHAIN_RPC_URL=${BLOCKCHAIN_RPC_URL}
+      - BLOCKCHAIN_PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}
+      - BLOCKCHAIN_CONTRACT_ADDRESS=${BLOCKCHAIN_CONTRACT_ADDRESS}
+      - BLOCKCHAIN_NETWORK=${BLOCKCHAIN_NETWORK:-Polygon Amoy Testnet}
+      - BLOCKCHAIN_CONFIRMATIONS_REQUIRED=${BLOCKCHAIN_CONFIRMATIONS_REQUIRED:-2}
+      - WORKER_HEALTH_PORT=9090
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.2"
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"

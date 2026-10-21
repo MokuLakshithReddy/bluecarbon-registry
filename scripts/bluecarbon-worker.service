@@ -1,0 +1,19 @@
+[Unit]
+Description=BlueCarbon Registry Outbox Worker Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=bluecarbon
+WorkingDirectory=/opt/bluecarbon-registry
+EnvironmentFile=/etc/bluecarbon-registry/worker.env
+ExecStart=/usr/bin/node --experimental-strip-types src/workers/outbox-worker.ts
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bluecarbon-worker
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
