@@ -7,6 +7,8 @@ import {
   verifySiweSignature,
   issueSiweNonce,
   consumeSiweNonce,
+  issueDurableSiweNonce,
+  consumeDurableSiweNonce,
   _resetSiweNonceStoreForTesting,
   getSecureSessionCookieOptions,
   type SiweMessageFields,
@@ -197,6 +199,35 @@ test("SIWE Authentication: Strictly validates ISO-8601 dates and fails closed on
   assert.throws(() => {
     parseSiweMessage(badVersionMsg);
   }, /Unsupported SIWE version/);
+});
+
+test("SIWE Authentication: Fail-closed on durable database errors when Supabase client is present", async () => {
+  const mockDbErrorClientInsert = {
+    from: (_table: string) => ({
+      insert: async () => ({
+        error: { code: "57P01", message: "terminating connection due to administrator command" },
+      }),
+    }),
+  };
+
+  await assert.rejects(async () => {
+    await issueDurableSiweNonce(
+      mockDbErrorClientInsert as unknown as Parameters<typeof issueDurableSiweNonce>[0],
+      "0x1234567890123456789012345678901234567890",
+    );
+  }, /Failed to persist SIWE nonce durably/);
+
+  const mockDbErrorClientRpc = {
+    rpc: async () => ({ data: null, error: { code: "57P01", message: "db connection failed" } }),
+  };
+
+  await assert.rejects(async () => {
+    await consumeDurableSiweNonce(
+      mockDbErrorClientRpc as unknown as Parameters<typeof consumeDurableSiweNonce>[0],
+      "nonce_test_12345",
+      "0x1234567890123456789012345678901234567890",
+    );
+  }, /Failed to consume durable SIWE nonce/);
 });
 
 test("SIWE Authentication: Configures HTTP-only secure cookie settings", () => {
