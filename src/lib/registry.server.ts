@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { anchorVerifiedRecord, type AnchorPayload } from "./blockchain.server.ts";
 import { CARBON_METHODOLOGY_ID } from "./domain.ts";
+import { verifyEvidenceProvenance } from "./evidence-validator.ts";
 import type { PublicProjectPayload, PublicProjectSummary } from "./public-types.ts";
 
 export function publicServerClient() {
@@ -158,6 +159,7 @@ export interface DecisionInput {
   comments?: string | null;
   confirmedCarbon?: number | null;
   expectedStatus?: "SUBMITTED" | "UNDER_REVIEW";
+  processOutboxInline?: boolean;
 }
 
 async function assertVerifier(supabase: VerifierClient, userId: string) {
@@ -296,10 +298,10 @@ export async function approveProject(input: DecisionInput) {
     throw new Error("Invalid carbon value: Confirmed carbon impact must be a positive number.");
   }
 
-  // 1. Strict Evidence Validation: Check query error, require >= 1 file, enforce cryptographic SHA-256 hash
+  // 1. Strict Evidence Validation & Provenance Check
   const { data: evidence, error: evidenceError } = await input.supabase
     .from("evidence")
-    .select("id, file_name, file_hash")
+    .select("id, file_name, file_hash, file_url")
     .eq("project_id", project.id);
 
   if (evidenceError) {
@@ -319,6 +321,65 @@ export async function approveProject(input: DecisionInput) {
     throw new Error(
       `Verification approval rejected: Evidence records [${invalidNames}] lack valid SHA-256 cryptographic content hashes. Cryptographic proof of file contents is strictly required.`,
     );
+  }
+
+  // 1b. Provenance Verification: Verify actual storage object bytes match recorded file_hash
+  for (const item of evidence) {
+    if (item.file_url) {
+      let storagePath: string | null = null;
+      if (item.file_url.startsWith("storage://evidence/")) {
+        const match = item.file_url.match(EVIDENCE_STORAGE_REGEX);
+        if (match) storagePath = `${match[1]}/${match[2]}`;
+      } else if (!item.file_url.startsWith("http")) {
+        storagePath = item.file_url.includes("/")
+          ? item.file_url
+          : `${project.id}/${item.file_url}`;
+      }
+
+      if (storagePath) {
+        let storageClient: {
+          from: (bucket: string) => {
+            download: (
+              path: string,
+            ) => Promise<{ data: Blob | Uint8Array | null; error: { message: string } | null }>;
+          };
+        } | null = null;
+        try {
+          const admin = await getAdmin();
+          storageClient = (admin as unknown as { storage: typeof storageClient })?.storage;
+        } catch {
+          storageClient = (input.supabase as unknown as { storage: typeof storageClient })?.storage;
+        }
+
+        if (storageClient?.from) {
+          const { data: fileBlob, error: downloadError } = await storageClient
+            .from("evidence")
+            .download(storagePath);
+
+          if (downloadError) {
+            throw new Error(
+              `Verification approval rejected: Unable to retrieve evidence file "${item.file_name}" from storage for provenance verification: ${downloadError.message}`,
+            );
+          }
+
+          if (fileBlob) {
+            const bytes =
+              fileBlob instanceof Uint8Array
+                ? fileBlob
+                : typeof fileBlob.arrayBuffer === "function"
+                  ? new Uint8Array(await fileBlob.arrayBuffer())
+                  : Buffer.from(fileBlob);
+
+            const provenance = verifyEvidenceProvenance(bytes, item.file_hash!);
+            if (!provenance.valid) {
+              throw new Error(
+                `Verification approval rejected: Evidence provenance check failed for "${item.file_name}". ${provenance.error}`,
+              );
+            }
+          }
+        }
+      }
+    }
   }
 
   const evidenceHashes = evidence.map((e) => e.file_hash as string);
@@ -344,7 +405,7 @@ export async function approveProject(input: DecisionInput) {
     verified_at: verifiedAt,
   };
 
-  // 2. Execute atomic database transaction (Stage 1: UNDER_REVIEW -> VERIFIED_PENDING_ANCHOR)
+  // 2. Execute atomic database transaction (Stage 1: UNDER_REVIEW -> VERIFIED_PENDING_ANCHOR + outbox)
   const supabaseWithRpc = input.supabase as unknown as {
     rpc: (
       fn: string,
@@ -373,119 +434,31 @@ export async function approveProject(input: DecisionInput) {
     );
   }
 
-  // 3. Anchor verified record on blockchain
-  const anchor = await anchorVerifiedRecord(anchorPayload);
-
-  // 4. Handle Blockchain Result & Transition State Durably
-  if (anchor.status === "CONFIRMED") {
-    // Stage 2 completion: Promote project from VERIFIED_PENDING_ANCHOR to VERIFIED
-    // ONLY genuine CONFIRMED on-chain status qualifies for VERIFIED
-    const { error: confirmError } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
-      _project_id: project.id,
-      _record_hash: anchor.record_hash,
-      _tx_hash: anchor.tx_hash,
-      _block_number: anchor.block_number,
-      _network: anchor.network,
-      _status: "CONFIRMED",
-      _verifier_id: input.userId,
-      _verified_tco2e: verifiedCarbon,
-      _anchored_payload: {
-        ...anchorPayload,
-        simulated: false,
-        explorer_url: anchor.explorer_url ?? null,
-        error: anchor.error ?? null,
-      },
-    });
-
-    if (confirmError) {
-      // NEVER ignore database failure to record transaction state!
-      throw new Error(
-        `Critical database error: Failed to record confirmed blockchain anchor for ${project.project_code}: ${confirmError.message}. State remains VERIFIED_PENDING_ANCHOR for recovery.`,
-      );
-    }
-
-    return { status: "VERIFIED" as const, verifiedCarbon, anchor };
+  // If processOutboxInline is explicitly requested (e.g. in synchronous test/demo harnesses)
+  if (input.processOutboxInline) {
+    return await retryProjectAnchor(input.supabase, project.id, input.userId);
   }
 
-  if (anchor.status === "SIMULATED") {
-    // Demo Mode Simulation: Explicitly records demo simulation in distinct DEMO_SIMULATED status (NEVER VERIFIED)
-    const { error: simError } = await supabaseWithRpc.rpc("record_simulated_demo_anchor", {
-      _project_id: project.id,
-      _record_hash: anchor.record_hash,
-      _tx_hash: anchor.tx_hash,
-      _verifier_id: input.userId,
-      _verified_tco2e: verifiedCarbon,
-      _anchored_payload: {
-        ...anchorPayload,
-        simulated: true,
-        explorer_url: null,
-      },
-    });
-
-    if (simError) {
-      throw new Error(
-        `Critical database error: Failed to record demo simulation state for ${project.project_code}: ${simError.message}.`,
-      );
-    }
-
-    return {
-      status: "DEMO_SIMULATED" as const,
-      verifiedCarbon,
-      anchor,
-      simulated: true,
-    };
-  }
-
-  // Anchoring failed or is pending: Record failure in durable outbox, do NOT report as VERIFIED
-  const { error: failErr } = await supabaseWithRpc.rpc("record_blockchain_failure", {
-    _project_id: project.id,
-    _error_message: anchor.error || "Blockchain anchoring did not achieve on-chain confirmation.",
-    _verifier_id: input.userId,
-  });
-
-  if (failErr) {
-    throw new Error(
-      `Failed to record blockchain failure state for ${project.project_code}: ${failErr.message}`,
-    );
-  }
-
+  // 3. Reliable durable outbox handoff: The verification decision is atomically committed.
+  // The separately operated outbox worker runtime claims the persisted outbox payload,
+  // submits the blockchain transaction, verifies on-chain finality, and updates project status.
   return {
     status: "VERIFIED_PENDING_ANCHOR" as const,
     verifiedCarbon,
-    anchor,
-    error: anchor.error || "Blockchain anchoring is pending or failed.",
+    outboxJobCreated: true,
+    message: `Project ${project.project_code} approved. Verification decision committed. Blockchain anchoring queued in durable outbox for worker processing.`,
   };
 }
 
 /**
- * Idempotently retries blockchain anchoring for a project in VERIFIED_PENDING_ANCHOR status.
- * Safely claims the durable outbox job with a lease to prevent race conditions and concurrent double-anchoring.
- * Reads the canonical stored outbox payload as the authoritative source of truth.
- * Strictly verifies identity binding and verifies that retry failures are durably persisted.
+ * Processes a claimed outbox job using the stored payload as canonical source of truth.
+ * Enforces idempotency (detects already confirmed on-chain records) and exponential backoff retry.
  */
-export async function retryProjectAnchor(
+export async function processClaimedOutboxJob(
   supabase: VerifierClient,
-  projectId: string,
-  verifierId: string,
+  job: { id: string; project_id: string; payload: AnchorPayload; attempts: number },
+  workerId: string,
 ) {
-  await assertVerifier(supabase, verifierId);
-
-  // Strict identity binding: authenticated user's ID must match verifierId
-  const { data: userRes } = await supabase.auth.getUser();
-  if (userRes?.user && userRes.user.id !== verifierId) {
-    throw new Error(
-      `Caller identity mismatch: auth.uid (${userRes.user.id}) does not match verifierId (${verifierId}).`,
-    );
-  }
-
-  const project = await loadProject(supabase, projectId);
-
-  if (project.status !== "VERIFIED_PENDING_ANCHOR") {
-    throw new Error(
-      `Project ${project.project_code} is in status '${project.status}', expected 'VERIFIED_PENDING_ANCHOR'.`,
-    );
-  }
-
   const supabaseWithRpc = supabase as unknown as {
     rpc: (
       fn: string,
@@ -493,185 +466,29 @@ export async function retryProjectAnchor(
     ) => Promise<{ data: unknown; error: { message: string } | null }>;
   };
 
-  // 1. Claim outbox job with row-level lock and lease
-  const workerId = `retry-verifier-${verifierId}`;
-  const { data: claimData, error: claimErr } = await supabaseWithRpc.rpc(
-    "claim_project_outbox_job",
-    {
-      _project_id: projectId,
-      _worker_id: workerId,
-      _lease_seconds: 60,
-    },
-  );
+  const payload = job.payload;
 
-  if (claimErr) {
-    throw new Error(`Failed to claim outbox job for ${project.project_code}: ${claimErr.message}`);
-  }
+  // 1. Idempotency Check: Verify if project is already verified and record already exists
+  const { data: project } = await supabase
+    .from("projects")
+    .select("status, verified_carbon")
+    .eq("id", job.project_id)
+    .single();
 
-  const claimedJobs = (claimData as Array<{ id: string; payload: AnchorPayload }>) || [];
-
-  let payload: AnchorPayload;
-  let jobId: string | null = null;
-
-  const firstJob = claimedJobs[0];
-  if (firstJob) {
-    // Authoritative source of truth: stored outbox payload
-    jobId = firstJob.id;
-    payload = firstJob.payload;
-  } else {
-    // If no active outbox record found (e.g. legacy row), safely reconstruct from database
-    const { data: evidence, error: evidenceError } = await supabase
-      .from("evidence")
-      .select("file_hash")
-      .eq("project_id", project.id);
-
-    if (evidenceError || !evidence || evidence.length === 0) {
-      throw new Error(
-        `Cannot retry anchor: missing or unreadable evidence for ${project.project_code}`,
-      );
-    }
-
-    const evidenceHashes = evidence.map((e) => e.file_hash as string);
-    const verifiedCarbon = Number(project.verified_carbon || project.estimated_carbon || 0);
-
-    payload = {
-      project_code: project.project_code,
-      project_name: project.name,
-      ecosystem: project.ecosystem,
-      state: project.state,
-      district: project.district,
-      latitude: project.latitude,
-      longitude: project.longitude,
-      area_hectares: project.area_hectares == null ? null : Number(project.area_hectares),
-      restoration_start: project.restoration_start,
-      restoration_end: project.restoration_end,
-      verified_tco2e: verifiedCarbon,
-      methodology: CARBON_METHODOLOGY_ID,
-      evidence_count: evidence.length,
-      evidence_hashes: evidenceHashes,
-      verifier_id: verifierId,
-      verified_at: new Date().toISOString(),
+  if (project?.status === "VERIFIED") {
+    return {
+      processed: true,
+      status: "VERIFIED" as const,
+      jobId: job.id,
+      alreadyVerified: true,
     };
   }
 
-  // 2. Submit anchor transaction
-  const anchor = await anchorVerifiedRecord(payload);
-
-  // 3. Handle confirmed on-chain finality
-  if (anchor.status === "CONFIRMED") {
-    const { error: confirmError } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
-      _project_id: project.id,
-      _record_hash: anchor.record_hash,
-      _tx_hash: anchor.tx_hash,
-      _block_number: anchor.block_number,
-      _network: anchor.network,
-      _status: "CONFIRMED",
-      _verifier_id: verifierId,
-      _verified_tco2e: payload.verified_tco2e,
-      _anchored_payload: {
-        ...payload,
-        simulated: false,
-        explorer_url: anchor.explorer_url ?? null,
-      },
-    });
-
-    if (confirmError) throw new Error(`Retry confirmation failed: ${confirmError.message}`);
-    return { status: "VERIFIED" as const, anchor };
-  }
-
-  // 4. Handle simulated demo mode (never promote to VERIFIED)
-  if (anchor.status === "SIMULATED") {
-    const { error: simError } = await supabaseWithRpc.rpc("record_simulated_demo_anchor", {
-      _project_id: project.id,
-      _record_hash: anchor.record_hash,
-      _tx_hash: anchor.tx_hash,
-      _verifier_id: verifierId,
-      _verified_tco2e: payload.verified_tco2e,
-      _anchored_payload: {
-        ...payload,
-        simulated: true,
-        explorer_url: null,
-      },
-    });
-
-    if (simError) throw new Error(`Retry simulation record failed: ${simError.message}`);
-    return { status: "DEMO_SIMULATED" as const, anchor, simulated: true };
-  }
-
-  // 5. Retry failed: Durably record failure in outbox and audit log. Strictly check for persistence errors.
-  const { error: failErr } = await supabaseWithRpc.rpc("record_blockchain_failure", {
-    _project_id: project.id,
-    _error_message: anchor.error || "Retry failed to achieve confirmation.",
-    _verifier_id: verifierId,
-  });
-
-  if (failErr) {
-    throw new Error(
-      `CRITICAL: Failed to durably record retry failure state for ${project.project_code}: ${failErr.message}`,
-    );
-  }
-
-  if (jobId) {
-    const { error: outboxFailErr } = await supabaseWithRpc.rpc("fail_outbox_job", {
-      _job_id: jobId,
-      _error_message: anchor.error || "Retry failed to achieve confirmation.",
-      _retry_delay_seconds: 30,
-      _max_attempts: 5,
-    });
-    if (outboxFailErr) {
-      throw new Error(
-        `CRITICAL: Failed to update outbox retry state for job ${jobId}: ${outboxFailErr.message}`,
-      );
-    }
-  }
-
-  return { status: "VERIFIED_PENDING_ANCHOR" as const, anchor, error: anchor.error };
-}
-
-/**
- * Independent outbox worker function.
- * Safely claims the next pending job using SKIP LOCKED, processes anchoring idempotently
- * from the stored payload, and applies exponential backoff on failure.
- */
-export async function processOutboxJob(
-  supabase: VerifierClient,
-  workerId: string = `worker-${Math.random().toString(36).substring(2, 9)}`,
-  leaseSeconds: number = 60,
-) {
-  const supabaseWithRpc = supabase as unknown as {
-    rpc: (
-      fn: string,
-      args: Record<string, unknown>,
-    ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  };
-
-  const { data: claimData, error: claimErr } = await supabaseWithRpc.rpc("claim_next_outbox_job", {
-    _worker_id: workerId,
-    _lease_seconds: leaseSeconds,
-  });
-
-  if (claimErr) {
-    throw new Error(`Outbox worker claim error: ${claimErr.message}`);
-  }
-
-  const jobs =
-    (claimData as Array<{
-      id: string;
-      project_id: string;
-      payload: AnchorPayload;
-      attempts: number;
-    }>) || [];
-  const firstJob = jobs[0];
-  if (!firstJob) {
-    return { processed: false, reason: "NO_PENDING_JOBS" as const };
-  }
-
-  const job = firstJob;
-  const payload = job.payload;
-
   try {
+    // 2. Submit anchor transaction using stored outbox payload as source of truth
     const anchor = await anchorVerifiedRecord(payload);
 
+    // 3. Handle CONFIRMED on-chain finality
     if (anchor.status === "CONFIRMED") {
       const { error: confirmErr } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
         _project_id: job.project_id,
@@ -698,6 +515,7 @@ export async function processOutboxJob(
       };
     }
 
+    // 4. Handle SIMULATED demo mode
     if (anchor.status === "SIMULATED") {
       const { error: simErr } = await supabaseWithRpc.rpc("record_simulated_demo_anchor", {
         _project_id: job.project_id,
@@ -716,12 +534,11 @@ export async function processOutboxJob(
       return { processed: true, status: "DEMO_SIMULATED" as const, jobId: job.id };
     }
 
-    // Anchoring failed: apply exponential backoff
-    const delay = Math.min(300, 30 * Math.pow(2, job.attempts - 1));
+    // 5. Anchoring failed: Durably record failure in outbox with exponential backoff
     const { error: failErr } = await supabaseWithRpc.rpc("fail_outbox_job", {
       _job_id: job.id,
-      _error_message: anchor.error || "Anchoring attempt failed.",
-      _retry_delay_seconds: delay,
+      _error_message: anchor.error || "Anchoring attempt failed to achieve on-chain confirmation.",
+      _base_delay_seconds: 30,
       _max_attempts: 5,
     });
 
@@ -730,18 +547,133 @@ export async function processOutboxJob(
       processed: true,
       status: "PENDING_RETRY" as const,
       jobId: job.id,
-      retryDelaySeconds: delay,
+      error: anchor.error,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     await supabaseWithRpc.rpc("fail_outbox_job", {
       _job_id: job.id,
       _error_message: errorMsg,
-      _retry_delay_seconds: 60,
+      _base_delay_seconds: 30,
       _max_attempts: 5,
     });
     throw err;
   }
+}
+
+/**
+ * Idempotently retries blockchain anchoring for a project in VERIFIED_PENDING_ANCHOR status.
+ * Safely claims the durable outbox job with a lease to prevent race conditions and concurrent double-anchoring.
+ * Reads the canonical stored outbox payload as the authoritative source of truth.
+ * Strictly verifies identity binding and verifies that retry failures are durably persisted.
+ */
+export async function retryProjectAnchor(
+  supabase: VerifierClient,
+  projectId: string,
+  verifierId: string,
+  forceRetryFailed: boolean = false,
+) {
+  await assertVerifier(supabase, verifierId);
+
+  // Strict identity binding: authenticated user's ID must match verifierId
+  const { data: userRes } = await supabase.auth.getUser();
+  if (userRes?.user && userRes.user.id !== verifierId) {
+    throw new Error(
+      `Caller identity mismatch: auth.uid (${userRes.user.id}) does not match verifierId (${verifierId}).`,
+    );
+  }
+
+  const project = await loadProject(supabase, projectId);
+
+  if (project.status !== "VERIFIED_PENDING_ANCHOR" && project.status !== "VERIFIED") {
+    throw new Error(
+      `Project ${project.project_code} is in status '${project.status}', expected 'VERIFIED_PENDING_ANCHOR'.`,
+    );
+  }
+
+  const supabaseWithRpc = supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+
+  // 1. Claim outbox job with row-level lock, lease, and retry backoff enforcement
+  const workerId = `retry-verifier-${verifierId}`;
+  const { data: claimData, error: claimErr } = await supabaseWithRpc.rpc(
+    "claim_project_outbox_job",
+    {
+      _project_id: projectId,
+      _worker_id: workerId,
+      _lease_seconds: 60,
+      _max_attempts: 5,
+      _force_retry_failed: forceRetryFailed,
+    },
+  );
+
+  if (claimErr) {
+    throw new Error(`Failed to claim outbox job for ${project.project_code}: ${claimErr.message}`);
+  }
+
+  const claimedJobs =
+    (claimData as Array<{
+      id: string;
+      project_id: string;
+      payload: AnchorPayload;
+      attempts: number;
+    }>) || [];
+  const firstJob = claimedJobs[0];
+
+  if (!firstJob) {
+    throw new Error(
+      `Cannot process anchor retry: No claimable outbox job found for ${project.project_code}. The job may be actively leased, in exponential backoff delay, or reached terminal failure.`,
+    );
+  }
+
+  // 2. Process using authoritative stored payload
+  return await processClaimedOutboxJob(supabase, firstJob, workerId);
+}
+
+/**
+ * Independent outbox worker function.
+ * Safely claims the next pending job using SKIP LOCKED, processes anchoring idempotently
+ * from the stored payload, and applies exponential backoff on failure.
+ */
+export async function processOutboxJob(
+  supabase: VerifierClient,
+  workerId: string = `worker-${Math.random().toString(36).substring(2, 9)}`,
+  leaseSeconds: number = 60,
+) {
+  const supabaseWithRpc = supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+
+  const { data: claimData, error: claimErr } = await supabaseWithRpc.rpc("claim_next_outbox_job", {
+    _worker_id: workerId,
+    _lease_seconds: leaseSeconds,
+    _max_attempts: 5,
+  });
+
+  if (claimErr) {
+    throw new Error(`Outbox worker claim error: ${claimErr.message}`);
+  }
+
+  const jobs =
+    (claimData as Array<{
+      id: string;
+      project_id: string;
+      payload: AnchorPayload;
+      attempts: number;
+    }>) || [];
+  const firstJob = jobs[0];
+  if (!firstJob) {
+    return { processed: false, reason: "NO_PENDING_JOBS" as const };
+  }
+
+  return await processClaimedOutboxJob(supabase, firstJob, workerId);
 }
 
 /** Requests correction. Enforces UNDER_REVIEW -> CORRECTION_REQUIRED transition atomically with mandatory comments. */

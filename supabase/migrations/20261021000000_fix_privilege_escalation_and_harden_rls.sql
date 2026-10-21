@@ -61,7 +61,7 @@ CREATE POLICY "admin delete roles" ON public.user_roles
 -- Checking definer role fails to identify service-role callers.
 -- We reliably check session_user, request.jwt.claim.role, and auth.jwt()->>'role'.
 CREATE OR REPLACE FUNCTION public.is_service_role() RETURNS boolean
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT (
     session_user = 'service_role' OR
     coalesce(current_setting('request.jwt.claim.role', true), '') = 'service_role' OR
@@ -69,6 +69,10 @@ LANGUAGE sql STABLE AS $$
   );
 $$;
 GRANT EXECUTE ON FUNCTION public.is_service_role() TO authenticated, service_role, anon;
+DO $$ BEGIN
+  GRANT USAGE ON SCHEMA auth TO authenticated, service_role, anon;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 -- 3. SECURE ROLE MANAGEMENT PROCEDURE (ADMIN ONLY)
 CREATE OR REPLACE FUNCTION public.admin_assign_role(
@@ -94,6 +98,7 @@ DO $$
 BEGIN
   ALTER TYPE public.project_status ADD VALUE IF NOT EXISTS 'VERIFIED_PENDING_ANCHOR' BEFORE 'VERIFIED';
   ALTER TYPE public.project_status ADD VALUE IF NOT EXISTS 'DEMO_SIMULATED';
+  CREATE TYPE public.review_decision AS ENUM ('APPROVED', 'CORRECTION_REQUESTED', 'REJECTED');
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
@@ -109,12 +114,13 @@ CREATE TABLE IF NOT EXISTS public.blockchain_outbox (
   last_error text,
   locked_until timestamptz,
   locked_by text,
-  next_retry_at timestamptz NOT NULL DEFAULT now(),
+  next_retry_at timestamptz DEFAULT now(),
   completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.blockchain_outbox ALTER COLUMN next_retry_at DROP NOT NULL;
 ALTER TABLE public.blockchain_outbox ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "outbox verifier read" ON public.blockchain_outbox;
 CREATE POLICY "outbox verifier read" ON public.blockchain_outbox FOR SELECT TO authenticated USING (public.is_verifier() OR public.has_role(auth.uid(), 'admin'));
@@ -370,7 +376,7 @@ END; $$;
 REVOKE EXECUTE ON FUNCTION public.perform_verification_decision FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.perform_verification_decision TO authenticated, service_role;
 
--- 4b. CONFIRM ON-CHAIN ANCHOR PROCEDURE
+-- 4b. CONFIRM ON-CHAIN ANCHOR PROCEDURE (WITH IDEMPOTENCY)
 -- Promotes project from VERIFIED_PENDING_ANCHOR to VERIFIED upon genuine blockchain confirmation.
 -- Strictly requires genuine CONFIRMED status from real EVM provider.
 CREATE OR REPLACE FUNCTION public.confirm_blockchain_anchor(
@@ -417,6 +423,30 @@ BEGIN
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Project not found: %', _project_id;
+  END IF;
+
+  -- IDEMPOTENCY: If project is already VERIFIED and record already exists for this tx, return success cleanly
+  IF v_project.status = 'VERIFIED' THEN
+    IF EXISTS (SELECT 1 FROM public.blockchain_records WHERE project_id = _project_id AND tx_hash = _tx_hash) THEN
+      UPDATE public.blockchain_outbox
+      SET
+        status = 'CONFIRMED',
+        record_hash = _record_hash,
+        tx_hash = _tx_hash,
+        locked_until = NULL,
+        locked_by = NULL,
+        completed_at = COALESCE(completed_at, v_now),
+        updated_at = v_now
+      WHERE project_id = _project_id AND status = 'PENDING';
+
+      RETURN jsonb_build_object(
+        'project_id', _project_id,
+        'status', 'VERIFIED',
+        'tx_hash', _tx_hash,
+        'record_hash', _record_hash,
+        'idempotent', true
+      );
+    END IF;
   END IF;
 
   IF v_project.status != 'VERIFIED_PENDING_ANCHOR' AND v_project.status != 'VERIFIED' THEN
@@ -471,17 +501,15 @@ BEGIN
   -- 7. Add timeline entry
   INSERT INTO public.project_timeline (
     project_id,
-    action,
-    actor_email,
     label,
     detail,
+    actor_email,
     created_at
   ) VALUES (
     _project_id,
-    'Blockchain anchored',
-    'system',
     'On-Chain Anchoring Confirmed',
     format('Record anchored on %s (tx: %s, block: %s).', _network, substring(_tx_hash from 1 for 10) || '...', coalesce(_block_number::text, 'pending')),
+    'system',
     v_now
   );
 
@@ -496,15 +524,35 @@ END; $$;
 REVOKE EXECUTE ON FUNCTION public.confirm_blockchain_anchor FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.confirm_blockchain_anchor TO authenticated, service_role;
 
--- 4c. RECORD BLOCKCHAIN FAILURE PROCEDURE (PRESERVES RETRY STATE & BINDS CALLER IDENTITY)
+-- 4b-ii. EXPONENTIAL BACKOFF CALCULATION HELPER
+CREATE OR REPLACE FUNCTION public.calculate_retry_backoff(
+  _attempts int,
+  _base_seconds int DEFAULT 30,
+  _max_seconds int DEFAULT 3600
+)
+RETURNS interval
+LANGUAGE sql
+IMMUTABLE AS $$
+  SELECT (LEAST(_base_seconds * (1 << LEAST(GREATEST(_attempts, 1) - 1, 10)), _max_seconds) || ' seconds')::interval;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.calculate_retry_backoff TO authenticated, service_role;
+
+-- 4c. RECORD BLOCKCHAIN FAILURE PROCEDURE (PRESERVES RETRY STATE, EXPONENTIAL BACKOFF & IDENTITY BINDING)
 CREATE OR REPLACE FUNCTION public.record_blockchain_failure(
   _project_id uuid,
   _error_message text,
-  _verifier_id uuid
+  _verifier_id uuid,
+  _max_attempts int DEFAULT 5
 )
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_now timestamptz := now();
+  v_job public.blockchain_outbox%ROWTYPE;
+  v_project public.projects%ROWTYPE;
+  v_new_attempts int := 1;
+  v_new_status text := 'PENDING';
+  v_backoff interval;
 BEGIN
   -- Strict caller authorization
   IF NOT (
@@ -520,32 +568,66 @@ BEGIN
     RAISE EXCEPTION 'Caller identity mismatch: auth.uid does not match verifier_id.';
   END IF;
 
-  -- Update outbox retry state with backoff
-  UPDATE public.blockchain_outbox
-  SET
-    attempts = attempts + 1,
-    last_error = _error_message,
-    locked_until = NULL,
-    locked_by = NULL,
-    next_retry_at = v_now + interval '30 seconds',
-    updated_at = v_now
-  WHERE project_id = _project_id AND status = 'PENDING';
+  SELECT * INTO v_project FROM public.projects WHERE id = _project_id;
+
+  SELECT * INTO v_job
+  FROM public.blockchain_outbox
+  WHERE project_id = _project_id
+    AND status = 'PENDING'
+  ORDER BY created_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF FOUND THEN
+    v_new_attempts := v_job.attempts + 1;
+    IF v_new_attempts >= _max_attempts THEN
+      v_new_status := 'FAILED';
+    ELSE
+      v_new_status := 'PENDING';
+    END IF;
+
+    v_backoff := public.calculate_retry_backoff(v_new_attempts, 30, 3600);
+
+    UPDATE public.blockchain_outbox
+    SET
+      attempts = v_new_attempts,
+      status = v_new_status,
+      last_error = _error_message,
+      locked_until = NULL,
+      locked_by = NULL,
+      next_retry_at = CASE WHEN v_new_status = 'FAILED' THEN NULL ELSE v_now + v_backoff END,
+      updated_at = v_now
+    WHERE id = v_job.id;
+  END IF;
 
   INSERT INTO public.audit_logs (
-    action,
     project_id,
-    actor_id,
-    details,
+    project_code,
+    actor_email,
+    action,
+    previous_status,
+    new_status,
+    comments,
     created_at
   ) VALUES (
-    'BLOCKCHAIN_ANCHOR_FAILED',
     _project_id,
-    _verifier_id,
-    jsonb_build_object('error', _error_message),
+    v_project.project_code,
+    COALESCE(
+      (SELECT email FROM public.profiles WHERE id = _verifier_id),
+      coalesce(auth.jwt()->>'email', 'verifier')
+    ),
+    'BLOCKCHAIN_ANCHOR_FAILED',
+    v_project.status::text,
+    v_project.status::text,
+    format('Blockchain anchor attempt %s failed: %s (Status: %s)', v_new_attempts, _error_message, v_new_status),
     v_now
   );
 
-  RETURN jsonb_build_object('success', true);
+  RETURN jsonb_build_object(
+    'success', true,
+    'status', v_new_status,
+    'attempts', v_new_attempts
+  );
 END; $$;
 
 REVOKE EXECUTE ON FUNCTION public.record_blockchain_failure FROM PUBLIC;
@@ -581,6 +663,13 @@ BEGIN
   SELECT * INTO v_project FROM public.projects WHERE id = _project_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Project not found: %', _project_id;
+  END IF;
+
+  -- Idempotency check for demo simulation
+  IF v_project.status = 'DEMO_SIMULATED' THEN
+    IF EXISTS (SELECT 1 FROM public.blockchain_records WHERE project_id = _project_id AND tx_hash = _tx_hash) THEN
+      RETURN jsonb_build_object('project_id', _project_id, 'status', 'DEMO_SIMULATED', 'simulated', true, 'idempotent', true);
+    END IF;
   END IF;
 
   INSERT INTO public.blockchain_records (
@@ -628,17 +717,15 @@ BEGIN
 
   INSERT INTO public.project_timeline (
     project_id,
-    action,
-    actor_email,
     label,
     detail,
+    actor_email,
     created_at
   ) VALUES (
     _project_id,
-    'Demo simulation anchored',
-    'system',
     'Simulated Demo Record (Unverified On-Chain)',
     'Project evaluated in simulated demo mode. No genuine on-chain transaction was submitted.',
+    'system',
     v_now
   );
 
@@ -652,10 +739,11 @@ END; $$;
 REVOKE EXECUTE ON FUNCTION public.record_simulated_demo_anchor FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_simulated_demo_anchor TO authenticated, service_role;
 
--- 4e. OUTBOX WORKER LEASING & JOB MANAGEMENT
+-- 4e. OUTBOX WORKER LEASING & JOB MANAGEMENT WITH UNIFIED RETRY POLICY
 CREATE OR REPLACE FUNCTION public.claim_next_outbox_job(
   _worker_id text,
-  _lease_seconds int DEFAULT 60
+  _lease_seconds int DEFAULT 60,
+  _max_attempts int DEFAULT 5
 )
 RETURNS TABLE (
   id uuid,
@@ -679,7 +767,8 @@ BEGIN
   FROM public.blockchain_outbox
   WHERE public.blockchain_outbox.status = 'PENDING'
     AND (public.blockchain_outbox.locked_until IS NULL OR public.blockchain_outbox.locked_until < now())
-    AND public.blockchain_outbox.next_retry_at <= now()
+    AND (public.blockchain_outbox.next_retry_at IS NULL OR public.blockchain_outbox.next_retry_at <= now())
+    AND public.blockchain_outbox.attempts < _max_attempts
   ORDER BY public.blockchain_outbox.created_at ASC
   FOR UPDATE SKIP LOCKED
   LIMIT 1;
@@ -705,7 +794,9 @@ GRANT EXECUTE ON FUNCTION public.claim_next_outbox_job TO authenticated, service
 CREATE OR REPLACE FUNCTION public.claim_project_outbox_job(
   _project_id uuid,
   _worker_id text,
-  _lease_seconds int DEFAULT 60
+  _lease_seconds int DEFAULT 60,
+  _max_attempts int DEFAULT 5,
+  _force_retry_failed boolean DEFAULT false
 )
 RETURNS TABLE (
   id uuid,
@@ -725,11 +816,28 @@ BEGIN
     RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can claim outbox jobs.';
   END IF;
 
+  -- Optional admin/verifier reset of a terminally FAILED job
+  IF _force_retry_failed THEN
+    UPDATE public.blockchain_outbox
+    SET
+      status = 'PENDING',
+      attempts = 0,
+      next_retry_at = now(),
+      locked_until = NULL,
+      locked_by = NULL,
+      updated_at = now()
+    WHERE public.blockchain_outbox.project_id = _project_id
+      AND public.blockchain_outbox.status = 'FAILED';
+  END IF;
+
+  -- UNIFIED ELIGIBILITY RULES: Identical to claim_next_outbox_job
   SELECT * INTO v_job
   FROM public.blockchain_outbox
   WHERE public.blockchain_outbox.project_id = _project_id
-    AND public.blockchain_outbox.status IN ('PENDING', 'FAILED')
+    AND public.blockchain_outbox.status = 'PENDING'
     AND (public.blockchain_outbox.locked_until IS NULL OR public.blockchain_outbox.locked_until < now())
+    AND (public.blockchain_outbox.next_retry_at IS NULL OR public.blockchain_outbox.next_retry_at <= now())
+    AND public.blockchain_outbox.attempts < _max_attempts
   ORDER BY public.blockchain_outbox.created_at DESC
   FOR UPDATE SKIP LOCKED
   LIMIT 1;
@@ -737,7 +845,6 @@ BEGIN
   IF FOUND THEN
     UPDATE public.blockchain_outbox
     SET
-      status = 'PENDING',
       locked_until = now() + v_lease_interval,
       locked_by = _worker_id,
       attempts = public.blockchain_outbox.attempts + 1,
@@ -756,7 +863,7 @@ GRANT EXECUTE ON FUNCTION public.claim_project_outbox_job TO authenticated, serv
 CREATE OR REPLACE FUNCTION public.fail_outbox_job(
   _job_id uuid,
   _error_message text,
-  _retry_delay_seconds int DEFAULT 30,
+  _base_delay_seconds int DEFAULT 30,
   _max_attempts int DEFAULT 5
 )
 RETURNS void
@@ -765,12 +872,13 @@ SECURITY DEFINER
 SET search_path = public AS $$
 DECLARE
   v_job public.blockchain_outbox%ROWTYPE;
+  v_backoff interval;
 BEGIN
   IF NOT (public.is_verifier() OR public.has_role(auth.uid(), 'admin') OR public.is_service_role()) THEN
     RAISE EXCEPTION 'Unauthorized: Only verifiers or service-role can update outbox jobs.';
   END IF;
 
-  SELECT * INTO v_job FROM public.blockchain_outbox WHERE id = _job_id;
+  SELECT * INTO v_job FROM public.blockchain_outbox WHERE id = _job_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Outbox job not found: %', _job_id;
   END IF;
@@ -781,16 +889,18 @@ BEGIN
       status = 'FAILED',
       locked_until = NULL,
       locked_by = NULL,
+      next_retry_at = NULL,
       last_error = _error_message,
       updated_at = now()
     WHERE id = _job_id;
   ELSE
+    v_backoff := public.calculate_retry_backoff(v_job.attempts, _base_delay_seconds, 3600);
     UPDATE public.blockchain_outbox
     SET
       status = 'PENDING',
       locked_until = NULL,
       locked_by = NULL,
-      next_retry_at = now() + (_retry_delay_seconds || ' seconds')::interval,
+      next_retry_at = now() + v_backoff,
       last_error = _error_message,
       updated_at = now()
     WHERE id = _job_id;

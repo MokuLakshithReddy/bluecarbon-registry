@@ -409,42 +409,103 @@ test("State Machine: approveProject handles anchoring failures and transitions t
     },
   ];
 
-  // Client where perform_verification_decision succeeds, but record_simulated_demo_anchor errors
-  const mockSupabase = {
-    auth: {
-      getUser: async () => ({
-        data: {
-          user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" },
-        },
-        error: null,
-      }),
-    },
-    from: (table: string) => ({
-      select: () => ({
-        eq: () => ({
-          then: (resolve: (val: unknown) => void) => {
-            if (table === "user_roles") {
-              return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
-            }
-            if (table === "evidence") {
-              return Promise.resolve({ data: validEvidence, error: null }).then(resolve);
-            }
-            return Promise.resolve({ data: [projectData], error: null }).then(resolve);
+  function createMockSupabase(
+    overrides: {
+      rpc?: (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: unknown }>;
+    } = {},
+  ) {
+    let projectStatus = "UNDER_REVIEW";
+
+    return {
+      auth: {
+        getUser: async () => ({
+          data: {
+            user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" },
           },
-          single: async () => ({ data: projectData, error: null }),
-          maybeSingle: async () => ({
-            data: table === "user_roles" ? { role: "verifier" } : projectData,
-            error: null,
+          error: null,
+        }),
+      },
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            then: (resolve: (val: unknown) => void) => {
+              if (table === "user_roles") {
+                return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
+              }
+              if (table === "evidence") {
+                return Promise.resolve({ data: validEvidence, error: null }).then(resolve);
+              }
+              return Promise.resolve({
+                data: [{ ...projectData, status: projectStatus }],
+                error: null,
+              }).then(resolve);
+            },
+            single: async () => ({ data: { ...projectData, status: projectStatus }, error: null }),
+            maybeSingle: async () => ({
+              data:
+                table === "user_roles"
+                  ? { role: "verifier" }
+                  : { ...projectData, status: projectStatus },
+              error: null,
+            }),
           }),
         }),
       }),
-    }),
-    rpc: async (fn: string, args: Record<string, unknown>) => {
-      if (fn === "perform_verification_decision") {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        if (fn === "perform_verification_decision") {
+          projectStatus = "VERIFIED_PENDING_ANCHOR";
+          return { data: { success: true }, error: null };
+        }
+        if (overrides.rpc) {
+          return overrides.rpc(fn, args);
+        }
         return { data: { success: true }, error: null };
+      },
+    };
+  }
+
+  // 1. Durable Outbox Handoff: approveProject commits verification decision & enqueues outbox job
+  const standardClient = createMockSupabase();
+  const outboxResult = await approveProject({
+    supabase: standardClient as unknown as RegistryClient,
+    userId: "00000000-0000-0000-0000-000000000001",
+    verifierEmail: "verifier@test.org",
+    projectId: "00000000-0000-0000-0000-000000000002",
+    confirmedCarbon: 500,
+  });
+
+  assert.strictEqual(outboxResult.status, "VERIFIED_PENDING_ANCHOR");
+  assert.strictEqual(outboxResult.verifiedCarbon, 500);
+  assert.strictEqual(
+    "outboxJobCreated" in outboxResult &&
+      (outboxResult as { outboxJobCreated?: boolean }).outboxJobCreated,
+    true,
+  );
+
+  // 1b. If inline processing or retry fails while recording anchor, it throws critical error
+  const mockClaimSupabase = createMockSupabase({
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === "claim_project_outbox_job") {
+        return {
+          data: [
+            {
+              id: "job-fail-1",
+              project_id: "00000000-0000-0000-0000-000000000002",
+              payload: {
+                project_code: "BC-MNG-ANCHOR",
+                verified_tco2e: 500,
+                verifier_id: "00000000-0000-0000-0000-000000000001",
+              },
+              attempts: 1,
+            },
+          ],
+          error: null,
+        };
       }
       if (fn === "record_simulated_demo_anchor") {
-        // Simulate DB failure writing simulation record
         return { data: null, error: { message: "Lock timeout on blockchain_records table" } };
       }
       if (fn === "record_blockchain_failure") {
@@ -454,34 +515,50 @@ test("State Machine: approveProject handles anchoring failures and transitions t
       }
       return { data: { success: true }, error: null };
     },
-  };
+  });
 
-  // 1. If database fails while recording anchor, approveProject throws critical error
   await assert.rejects(
     async () => {
       await approveProject({
-        supabase: mockSupabase as unknown as RegistryClient,
+        supabase: mockClaimSupabase as unknown as RegistryClient,
         userId: "00000000-0000-0000-0000-000000000001",
         verifierEmail: "verifier@test.org",
         projectId: "00000000-0000-0000-0000-000000000002",
         confirmedCarbon: 500,
+        processOutboxInline: true,
       });
     },
-    /Critical database error: Failed to record demo simulation state/,
+    /Outbox simulation record error: Lock timeout on blockchain_records table/,
     "Must throw critical database error if recording anchor state fails",
   );
 
   // 2. Simulated demo anchoring produces distinct DEMO_SIMULATED status (never VERIFIED)
-  const mockSimSuccessSupabase = {
-    ...mockSupabase,
+  const mockSimSuccessSupabase = createMockSupabase({
     rpc: async (fn: string) => {
+      if (fn === "claim_project_outbox_job") {
+        return {
+          data: [
+            {
+              id: "job-demo-1",
+              project_id: "00000000-0000-0000-0000-000000000002",
+              payload: {
+                project_code: "BC-MNG-ANCHOR",
+                verified_tco2e: 500,
+                verifier_id: "00000000-0000-0000-0000-000000000001",
+              },
+              attempts: 1,
+            },
+          ],
+          error: null,
+        };
+      }
       if (fn === "record_simulated_demo_anchor") {
         recordedSuccess = true;
         return { data: { success: true }, error: null };
       }
       return { data: { success: true }, error: null };
     },
-  };
+  });
 
   const simResult = await approveProject({
     supabase: mockSimSuccessSupabase as unknown as RegistryClient,
@@ -489,6 +566,7 @@ test("State Machine: approveProject handles anchoring failures and transitions t
     verifierEmail: "verifier@test.org",
     projectId: "00000000-0000-0000-0000-000000000002",
     confirmedCarbon: 500,
+    processOutboxInline: true,
   });
 
   assert.strictEqual(
@@ -566,7 +644,7 @@ test("State Machine: approveProject handles anchoring failures and transitions t
         "00000000-0000-0000-0000-000000000001",
       );
     },
-    /Retry simulation record failed: Database outage during retry record/,
+    /Outbox simulation record error: Database outage during retry record/,
     "retryProjectAnchor must never swallow database failures during retries",
   );
 });

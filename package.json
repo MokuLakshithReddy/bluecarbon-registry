@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "seed:demo": "node --experimental-strip-types scripts/seed-demo-accounts.ts"
+    "seed:demo": "node --experimental-strip-types scripts/seed-demo-accounts.ts",
+    "worker:outbox": "node --experimental-strip-types src/workers/outbox-worker.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

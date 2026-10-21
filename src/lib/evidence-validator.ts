@@ -11,6 +11,8 @@
  * - SHA-256 integrity hash verification
  */
 
+import crypto from "node:crypto";
+
 export const MAX_EVIDENCE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
 
 export const ALLOWED_MIME_TYPES = new Set([
@@ -107,4 +109,46 @@ export function validateStorageUri(uri: string): {
     projectId: match[1],
     filename: match[2],
   };
+}
+
+/** Computes the SHA-256 cryptographic hex digest of file bytes for tamper-evident provenance. */
+export function computeFileSha256(bytes: Uint8Array | ArrayBuffer | Buffer): string {
+  const buffer = Buffer.isBuffer(bytes)
+    ? bytes
+    : bytes instanceof Uint8Array
+      ? Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      : Buffer.from(bytes);
+  return crypto.createHash("sha256").update(buffer).digest("hex").toLowerCase();
+}
+
+/**
+ * Verifies that the actual bytes retrieved from storage match the recorded SHA-256 hash.
+ * Protects against evidence tampering or silent corruption between upload and verification.
+ */
+export function verifyEvidenceProvenance(
+  fileBytes: Uint8Array | ArrayBuffer | Buffer,
+  expectedHash: string,
+): { valid: boolean; actualHash: string; expectedHash: string; error?: string } {
+  const actualHash = computeFileSha256(fileBytes);
+  const normalizedExpected = (expectedHash || "").trim().toLowerCase();
+
+  if (!/^[a-f0-9]{64}$/.test(normalizedExpected)) {
+    return {
+      valid: false,
+      actualHash,
+      expectedHash: normalizedExpected,
+      error: `Invalid expected hash format: "${expectedHash}". Expected 64-character hexadecimal SHA-256 digest.`,
+    };
+  }
+
+  if (actualHash !== normalizedExpected) {
+    return {
+      valid: false,
+      actualHash,
+      expectedHash: normalizedExpected,
+      error: `Hash mismatch (tampering detected): Stored bytes digest ${actualHash} does not match verified record hash ${normalizedExpected}.`,
+    };
+  }
+
+  return { valid: true, actualHash, expectedHash: normalizedExpected };
 }

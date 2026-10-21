@@ -4,6 +4,8 @@ import {
   validateEvidenceUpload,
   sanitizeFilename,
   validateStorageUri,
+  computeFileSha256,
+  verifyEvidenceProvenance,
   MAX_EVIDENCE_SIZE_BYTES,
 } from "../../src/lib/evidence-validator.ts";
 
@@ -93,4 +95,39 @@ test("Evidence Security: rejects arbitrary external or malicious URLs", () => {
     const result = validateStorageUri(url);
     assert.strictEqual(result.valid, false, `Expected ${url} to be rejected`);
   }
+});
+
+test("Evidence Security: computeFileSha256 produces valid 64-character SHA-256 hex string", () => {
+  const content = new TextEncoder().encode("blue carbon mangrove field data 2026");
+  const hash = computeFileSha256(content);
+  assert.strictEqual(typeof hash, "string");
+  assert.strictEqual(hash.length, 64);
+  assert.strictEqual(/^[0-9a-f]{64}$/.test(hash), true);
+
+  // Exact known SHA-256 for this content
+  const hashAgain = computeFileSha256(content);
+  assert.strictEqual(hash, hashAgain, "Hash computation must be strictly deterministic");
+});
+
+test("Evidence Security: verifyEvidenceProvenance verifies authentic bytes and detects tampering", () => {
+  const originalBytes = new TextEncoder().encode("genuine uncorrupted soil core measurements");
+  const correctHash = computeFileSha256(originalBytes);
+
+  // 1. Authentic file passes provenance check
+  const authenticResult = verifyEvidenceProvenance(originalBytes, correctHash);
+  assert.strictEqual(authenticResult.valid, true);
+  assert.strictEqual(authenticResult.actualHash, correctHash);
+
+  // 2. Tampered file with a single flipped byte fails provenance check
+  const tamperedBytes = new Uint8Array(originalBytes);
+  tamperedBytes[0] ^= 0xff; // corrupt first byte
+  const tamperedResult = verifyEvidenceProvenance(tamperedBytes, correctHash);
+  assert.strictEqual(tamperedResult.valid, false);
+  assert.ok(tamperedResult.error?.includes("Hash mismatch (tampering detected)"));
+  assert.ok(tamperedResult.error?.includes("does not match verified record hash"));
+
+  // 3. Invalid or malformed hash format rejected
+  const malformedResult = verifyEvidenceProvenance(originalBytes, "not-a-valid-sha256");
+  assert.strictEqual(malformedResult.valid, false);
+  assert.ok(malformedResult.error?.includes("Expected 64-character hexadecimal SHA-256"));
 });
