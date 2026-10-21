@@ -22,4 +22,5 @@ paths = [
   '''\.example$''',
   '''scripts/security-audit\.ts''',
   '''src/lib/observability\.ts''',
+  '''tests/security/secret-audit-canary\.test\.ts''',
 ]

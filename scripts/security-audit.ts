@@ -29,7 +29,14 @@ const SECRET_REGEXES = [
   { name: "Private Key Block", regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
 ];
 
-const IGNORED_PATHS = ["node_modules", ".output", "dist", ".wrangler", "package-lock.json"];
+const IGNORED_PATHS = [
+  "node_modules",
+  ".output",
+  "dist",
+  ".wrangler",
+  "package-lock.json",
+  ".gitleaks.toml",
+];
 
 // Explicit, reviewed list of synthetic fixture hashes used in unit and EVM tests
 export const REVIEWED_TEST_FIXTURE_HASHES = new Set([
