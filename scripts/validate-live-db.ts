@@ -137,62 +137,103 @@ export async function validateLiveDatabase(): Promise<{
     });
 
     // 4a. Anonymous access to audit_logs must be DENIED (RLS active)
+    // 4a. Anonymous access to audit_logs must be DENIED (RLS active)
     // First, verify with service-role client that audit_logs actually contains rows to prevent false passes on empty tables
     let serviceAuditCount = 0;
     try {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from("audit_logs")
         .select("*", { count: "exact", head: true });
-      serviceAuditCount = count ?? 0;
-    } catch {
-      // ignore
+      if (error) {
+        results.push({
+          step: "Audit Logs Fixture Verification (Service Role)",
+          passed: false,
+          details: `Service-role could not query audit_logs count: ${error.message}`,
+        });
+      } else {
+        serviceAuditCount = count ?? 0;
+      }
+    } catch (err) {
+      results.push({
+        step: "Audit Logs Fixture Verification (Service Role)",
+        passed: false,
+        details: `Exception querying audit_logs fixture count: ${String(err)}`,
+      });
     }
 
     try {
       const { data, error } = await anonClient.from("audit_logs").select("*").limit(1);
-      // RLS policy rejection returns either an explicit error (e.g. 42501 permission denied) or empty array when table has rows
-      const isDenied = Boolean(error) || (serviceAuditCount > 0 && (!data || data.length === 0));
+      const isExplicitAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.code === "P0001" ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("policy") ||
+          error?.message.includes("Unauthorized"));
+      // RLS policy rejection returns either an explicit error or 0 rows when table has rows
+      const isDenied =
+        isExplicitAuthDenied || (serviceAuditCount > 0 && (!data || data.length === 0));
       results.push({
         step: "RLS Enforcement: audit_logs isolated from anonymous access",
         passed: isDenied,
         details: isDenied
-          ? `Anonymous access blocked by RLS (service rows: ${serviceAuditCount}, anon error: ${error?.message ?? "empty"}).`
-          : "FAILURE: audit_logs returned data or table is empty and cannot prove RLS isolation!",
+          ? `Anonymous access blocked by RLS (service rows: ${serviceAuditCount}, anon response: ${error?.message ?? "0 rows returned"}).`
+          : `FAILURE: audit_logs returned data (${data?.length} rows) or table is empty without proof of isolation!`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "RLS Enforcement: audit_logs isolated from anonymous access",
-        passed: true,
-        details: "Anonymous access rejected with exception.",
+        passed: false,
+        details: `Unexpected network/system error during test: ${String(err)}`,
       });
     }
 
     // 4b. Anonymous access to blockchain_outbox must be DENIED
     let serviceOutboxCount = 0;
     try {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from("blockchain_outbox")
         .select("*", { count: "exact", head: true });
-      serviceOutboxCount = count ?? 0;
-    } catch {
-      // ignore
+      if (error) {
+        results.push({
+          step: "Outbox Queue Fixture Verification (Service Role)",
+          passed: false,
+          details: `Service-role could not query outbox count: ${error.message}`,
+        });
+      } else {
+        serviceOutboxCount = count ?? 0;
+      }
+    } catch (err) {
+      results.push({
+        step: "Outbox Queue Fixture Verification (Service Role)",
+        passed: false,
+        details: `Exception querying outbox fixture count: ${String(err)}`,
+      });
     }
 
     try {
       const { data, error } = await anonClient.from("blockchain_outbox").select("*").limit(1);
-      const isDenied = Boolean(error) || (serviceOutboxCount > 0 && (!data || data.length === 0));
+      const isExplicitAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.code === "P0001" ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("policy") ||
+          error?.message.includes("Unauthorized"));
+      const isDenied =
+        isExplicitAuthDenied || (serviceOutboxCount > 0 && (!data || data.length === 0));
       results.push({
         step: "RLS Enforcement: blockchain_outbox isolated from anonymous access",
         passed: isDenied,
         details: isDenied
-          ? `Outbox queue blocked by RLS (service rows: ${serviceOutboxCount}, anon error: ${error?.message ?? "empty"}).`
-          : "FAILURE: blockchain_outbox returned data or table is empty without proof of isolation!",
+          ? `Outbox queue blocked by RLS (service rows: ${serviceOutboxCount}, anon response: ${error?.message ?? "0 rows returned"}).`
+          : `FAILURE: blockchain_outbox returned data (${data?.length} rows) or table is empty without proof of isolation!`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "RLS Enforcement: blockchain_outbox isolated from anonymous access",
-        passed: true,
-        details: "Anonymous access rejected with exception.",
+        passed: false,
+        details: `Unexpected network/system error during test: ${String(err)}`,
       });
     }
 
@@ -202,19 +243,26 @@ export async function validateLiveDatabase(): Promise<{
         project_code: "BC-ANON-TEST",
         name: "Unauthorized Project",
       } as never);
-      const blocked = error != null;
+      const isExplicitAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.code === "P0001" ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("policy") ||
+          error?.message.includes("violates row-level security") ||
+          error?.message.includes("Unauthorized"));
       results.push({
         step: "RLS Enforcement: Unauthorized INSERT to projects rejected",
-        passed: blocked,
-        details: blocked
-          ? `Rejected as expected: ${error?.message}`
-          : "FAILURE: Anonymous insert into projects succeeded!",
+        passed: isExplicitAuthDenied,
+        details: isExplicitAuthDenied
+          ? `Rejected by RLS as expected: ${error?.message}`
+          : `FAILURE: Expected RLS rejection (42501), got: ${error ? error.message : "INSERT succeeded!"}`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "RLS Enforcement: Unauthorized INSERT to projects rejected",
-        passed: true,
-        details: "Anonymous write rejected.",
+        passed: false,
+        details: `Unexpected network/system error during test: ${String(err)}`,
       });
     }
 
@@ -226,19 +274,25 @@ export async function validateLiveDatabase(): Promise<{
           _worker_id: "unauthorized-worker",
         } as never,
       );
-      const blocked = error != null;
+      const isExplicitAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.code === "P0001" ||
+          error?.message.includes("Unauthorized") ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("Only service-role"));
       results.push({
         step: "RPC Authorization: Anonymous call to claim_next_outbox_job rejected",
-        passed: blocked,
-        details: blocked
+        passed: isExplicitAuthDenied,
+        details: isExplicitAuthDenied
           ? `Privileged RPC rejected as expected: ${error?.message}`
-          : "FAILURE: Anonymous caller was able to invoke claim_next_outbox_job!",
+          : `FAILURE: Expected authorization failure (42501), got: ${error ? error.message : "RPC succeeded!"}`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "RPC Authorization: Anonymous call to claim_next_outbox_job rejected",
-        passed: true,
-        details: "Privileged RPC rejected.",
+        passed: false,
+        details: `Unexpected network/system error during test: ${String(err)}`,
       });
     }
 
@@ -252,23 +306,59 @@ export async function validateLiveDatabase(): Promise<{
           _notes: "Exploit attempt",
         } as never,
       );
-      const blocked = error != null;
+      const isExplicitAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.code === "P0001" ||
+          error?.message.includes("Unauthorized") ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("Only verifiers"));
       results.push({
         step: "RPC Authorization: Anonymous verification decision rejected",
-        passed: blocked,
-        details: blocked
+        passed: isExplicitAuthDenied,
+        details: isExplicitAuthDenied
           ? `Verification RPC rejected as expected: ${error?.message}`
-          : "FAILURE: Anonymous caller was able to approve a project!",
+          : `FAILURE: Expected authorization failure, got: ${error ? error.message : "RPC succeeded!"}`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "RPC Authorization: Anonymous verification decision rejected",
-        passed: true,
-        details: "Verification decision rejected.",
+        passed: false,
+        details: `Unexpected network/system error during test: ${String(err)}`,
       });
     }
 
-    // 4f. Public read-only RPCs must be permitted
+    // 4f. Anonymous call to complete_outbox_job must be REJECTED
+    try {
+      const { error } = await anonClient.rpc(
+        "complete_outbox_job" as never,
+        {
+          _job_id: "00000000-0000-0000-0000-000000000000",
+        } as never,
+      );
+      const isExplicitAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.code === "P0001" ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("Unauthorized") ||
+          error?.message.includes("Only service-role"));
+      results.push({
+        step: "RPC Authorization: Anonymous call to complete_outbox_job rejected",
+        passed: isExplicitAuthDenied,
+        details: isExplicitAuthDenied
+          ? `Completion RPC rejected for anonymous caller as expected: ${error?.message}`
+          : `FAILURE: Expected permission denied (42501), got: ${error ? error.message : "RPC succeeded!"}`,
+      });
+    } catch (err) {
+      results.push({
+        step: "RPC Authorization: Anonymous call to complete_outbox_job rejected",
+        passed: false,
+        details: `Unexpected network/system error during test: ${String(err)}`,
+      });
+    }
+
+    // 4g. Public read-only RPCs must be permitted
     try {
       const { error } = await anonClient.rpc("list_public_projects" as never);
       results.push({
@@ -438,19 +528,25 @@ export async function validateLiveDatabase(): Promise<{
         .from("projects")
         .update({ owner_id: "00000000-0000-0000-0000-000000000000" } as never)
         .eq("id", "00000000-0000-0000-0000-000000000000");
-      const blocked = error != null;
+      const isExplicitAuthDenied =
+        Boolean(error) &&
+        (error?.code === "42501" ||
+          error?.code === "P0001" ||
+          error?.message.includes("permission denied") ||
+          error?.message.includes("violates row-level security") ||
+          error?.message.includes("Unauthorized"));
       results.push({
         step: "Authenticated Verifier: Project owner hijacking rejected",
-        passed: blocked,
-        details: blocked
+        passed: isExplicitAuthDenied,
+        details: isExplicitAuthDenied
           ? `Owner hijacking blocked as expected: ${error?.message}`
-          : "FAILURE: Verifier could reassign project ownership!",
+          : `FAILURE: Expected authorization denial (42501), got: ${error ? error.message : "UPDATE succeeded!"}`,
       });
-    } catch {
+    } catch (err) {
       results.push({
         step: "Authenticated Verifier: Project owner hijacking rejected",
-        passed: true,
-        details: "Ownership tampering blocked.",
+        passed: false,
+        details: `Unexpected network/system error during test: ${String(err)}`,
       });
     }
   } else {

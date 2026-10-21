@@ -554,6 +554,16 @@ export async function processClaimedOutboxJob(
       });
 
       if (confirmErr) throw new Error(`Outbox confirmation error: ${confirmErr.message}`);
+
+      // Complete outbox job explicitly to clear lease, transition status, and bind verified tx_hash
+      const { error: completeErr } = await supabaseWithRpc.rpc("complete_outbox_job", {
+        _job_id: job.id,
+        _tx_hash: anchor.tx_hash,
+        _record_hash: anchor.record_hash,
+      });
+
+      if (completeErr) throw new Error(`Outbox completion error: ${completeErr.message}`);
+
       return {
         processed: true,
         status: "VERIFIED" as const,

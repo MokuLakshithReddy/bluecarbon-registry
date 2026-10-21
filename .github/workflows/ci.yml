@@ -46,13 +46,18 @@ jobs:
       - name: Run code linter (blocking)
         run: npm run lint
 
-      - name: Run security audit and secret scanner (blocking)
+      - name: Run Gitleaks Secret Scanner (full history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run security audit and fail-closed secret scanner
         env:
           STRICT_AUDIT: "true"
         run: npm run audit:security
 
-      - name: Run compilation & contract validation
-        run: node --experimental-strip-types tests/blockchain/contract-solidity.test.ts
+      - name: Run EVM deployment & contract RBAC test suite
+        run: npm run test:evm
 
   build:
     name: Production Build Verification

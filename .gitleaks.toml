@@ -1,0 +1,25 @@
+# Gitleaks configuration for BlueCarbon Registry
+title = "BlueCarbon Registry Gitleaks Rules"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Reviewed synthetic test fixture values"
+regexes = [
+  '''0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890''',
+  '''0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''',
+  '''0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa''',
+  '''0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb''',
+  '''0x0000000000000000000000000000000000000000000000000000000000000000''',
+  '''0x1111111111111111111111111111111111111111111111111111111111111111''',
+  '''0x2222222222222222222222222222222222222222222222222222222222222222''',
+  '''0x3333333333333333333333333333333333333333333333333333333333333333''',
+  '''0x9999999999999999999999999999999999999999999999999999999999999999''',
+  '''0x437ed705ea2c9ae29f9e8bcf1a64658661c930cb6ef90e3f970957be7e4a1679''',
+]
+paths = [
+  '''\.example$''',
+  '''scripts/security-audit\.ts''',
+  '''src/lib/observability\.ts''',
+]

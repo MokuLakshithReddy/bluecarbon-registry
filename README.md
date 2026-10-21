@@ -336,23 +336,25 @@ node --experimental-strip-types --test tests/verification/*.test.ts
 node --experimental-strip-types --test tests/scientific/*.test.ts
 ```
 
-**Test count: 130 passing, 0 failing**
+**Test count: 138 passing, 0 failing**
 
-| Suite                                         | Tests  | Coverage                                                                |
-| --------------------------------------------- | ------ | ----------------------------------------------------------------------- |
-| `blockchain/`                                 | 19     | Real EVM provider, receipt verification, event parsing, precision       |
-| `evidence/evidence-security.test.ts`          | 6      | Upload validation, URI validation, SHA-256, provenance                  |
-| `evidence/cross-project-binding.test.ts`      | 34     | Cross-project path binding, traversal hardening, all attack vectors     |
-| `evidence/evidence-e2e.test.ts`               | 6      | Storage download, SHA-256 integrity, tamper detection, fail-closed     |
-| `scientific/carbon-methodology.test.ts`       | 8      | IPCC coefficients, 5.42 methane, Tier 1/2/3, benchmarks, date checks   |
-| `security/auth-privilege-escalation.test.ts`  | 5      | Signup trigger guards, ownership isolation, verifier immutability       |
-| `security/database-integration.test.ts`       | 14     | Real PGlite migrations, RLS enforcement, outbox leases, identity binds  |
-| `security/storage-and-public-exposure.test.ts`| 3      | Fail-closed public evidence, community media auth, demo gating          |
-| `security/threat-model-audit.test.ts`         | 7      | State machine abuse, IDOR prevention, negative/NaN input bounds         |
-| `validation/validation-engine.test.ts`        | 4      | Haversine distance, EQS quality scoring, duplicate file detection       |
-| `verification/state-machine.test.ts`          | 9      | State machine, fail-closed provenance, worker recovery, compound errors |
-| `verification/crash-recovery-concurrency.test.ts` | 2  | Worker crashes, lease reclamation, idempotent confirmations             |
-| `quality/accessibility-performance-privacy.test.ts` | 4 | 1,000 calcs < 50ms, PII redaction, WCAG AA contrast/semantics           |
+| Suite                                               | Tests | Coverage                                                                |
+| --------------------------------------------------- | ----- | ----------------------------------------------------------------------- |
+| `blockchain/`                                       | 19    | Real EVM provider, receipt verification, event parsing, precision       |
+| `deployment/smoke-test-resilience.test.ts`          | 4     | Wrong-chain ID, missing contract bytecode, malformed RPC, RPC timeout   |
+| `evidence/evidence-security.test.ts`                | 6     | Upload validation, URI validation, SHA-256, provenance                  |
+| `evidence/cross-project-binding.test.ts`            | 34    | Cross-project path binding, traversal hardening, all attack vectors     |
+| `evidence/evidence-e2e.test.ts`                     | 6     | Storage download, SHA-256 integrity, tamper detection, fail-closed      |
+| `scientific/carbon-methodology.test.ts`             | 8     | IPCC coefficients, 5.42 methane, Tier 1/2/3, benchmarks, date checks    |
+| `security/auth-privilege-escalation.test.ts`        | 5     | Signup trigger guards, ownership isolation, verifier immutability       |
+| `security/database-integration.test.ts`             | 14    | Real PGlite migrations, RLS enforcement, outbox leases, identity binds  |
+| `security/secret-audit-canary.test.ts`              | 2     | Secret audit canary verification, fail-closed git history inspection    |
+| `security/storage-and-public-exposure.test.ts`      | 3     | Fail-closed public evidence, community media auth, demo gating          |
+| `security/threat-model-audit.test.ts`               | 7     | State machine abuse, IDOR prevention, negative/NaN input bounds         |
+| `validation/validation-engine.test.ts`              | 4     | Haversine distance, EQS quality scoring, duplicate file detection       |
+| `verification/state-machine.test.ts`                | 9     | State machine, fail-closed provenance, worker recovery, compound errors |
+| `verification/crash-recovery-concurrency.test.ts`   | 2     | Worker crashes, lease reclamation, idempotent confirmations             |
+| `quality/accessibility-performance-privacy.test.ts` | 4     | 1,000 calcs < 50ms, PII redaction, WCAG AA contrast/semantics           |
 
 Type-check:
 
@@ -379,6 +381,7 @@ npm run audit:security
 Every finding from the production-readiness audit across P0 (Release Blockers), P1 (Integrity & Security), and P2 (Operations) has been remediated and verified:
 
 ### Phase 1 — Block Unsafe Releases & Fix Security
+
 1. **Remove public demo credentials & gate demo UI**:
    - Hardcoded `DEMO_PASSWORD = "bluecarbon123"` removed from production code.
    - Demo buttons and credentials panel in `src/routes/auth.tsx` are conditionally rendered only when `isDemoModeEnabled` (`DEV` mode + `VITE_ALLOW_DEMO_LOGIN === "true"`).
@@ -401,6 +404,7 @@ Every finding from the production-readiness audit across P0 (Release Blockers), 
    - Health server adds request timeouts (5s) and error event listeners.
 
 ### Phase 2 — Prove Integrity & Reconcile Methodology
+
 7. **Disaster recovery execution order**:
    - `scripts/disaster-recovery-reconcile.ts` reconciles mined on-chain transactions before reclaiming expired leases to eliminate races with live workers.
    - Error handling added to `complete_outbox_job` calls.
@@ -419,6 +423,32 @@ Every finding from the production-readiness audit across P0 (Release Blockers), 
     - Expanded credential scanning regexes to cover modern GitHub fine-grained tokens, AWS keys, and private key headers.
     - Added `npm run audit:security` as a blocking gate in `.github/workflows/ci.yml`.
     - Pinned compiler/EVM standards and verified production bundle build.
+
+### Phase 3 — P0 Release Blockers Remediated
+
+12. **Gitleaks Secret Scanning Across Full Git History & Canary Verification**:
+    - Full-depth git checkout (`fetch-depth: 0`) integrated into GitHub Actions CI.
+    - Added automated history-aware Gitleaks secret scanner with `.gitleaks.toml`.
+    - Removed broad directory exclusions (`tests/blockchain`, `tests/security`) from `scripts/security-audit.ts`.
+    - Replaced line-skipping via substring placeholders with strict, reviewed fixture allowlist hashes (`REVIEWED_TEST_FIXTURE_HASHES`).
+    - Added automated canary tests (`tests/security/secret-audit-canary.test.ts`) proving that synthetic secrets fail scanning and git scanner errors fail closed.
+13. **Real In-Process EVM Execution for Solidity Contract**:
+    - Replaced JavaScript `Set`/`Map` simulations in `tests/blockchain/contract-solidity.test.ts` with authentic in-process EVM deployment and transaction execution via `@ethereumjs/vm` against compiled solc bytecode.
+    - Verifies real on-chain authorization (`authorizeVerifier`), revocation (`revokeVerifier`), ownership transfer (`transferOwnership`), and duplicate rejection (`anchorRecord`).
+    - Asserts real custom error reverts (`UnauthorizedVerifier`, `OnlyOwner`, `ZeroAddress`, `RecordAlreadyAnchored`, `InvalidRecordHash`) and emitted receipt events (`VerifierAuthorized`, `RecordAnchored`, `VerifierRevoked`, `OwnershipTransferred`).
+    - Added `npm run test:evm` as a dedicated check in `.github/workflows/ci.yml`.
+14. **Fail-Closed Live Database Validation**:
+    - `scripts/validate-live-db.ts` rejects catch-all error handling and classifies only expected PostgreSQL permission denial codes (`42501`, `P0001`, `PGRST301`) as passed; network failures or SQL syntax errors fail closed.
+    - Added strict validation for `complete_outbox_job` execution denial against anonymous callers.
+    - Enforced mandatory verification in release mode requiring staging JWTs (`STAGING_OWNER_JWT`, `STAGING_VERIFIER_JWT`) and private evidence fixtures.
+15. **Strict Outbox Completion Trust Boundary**:
+    - Migration `20261021000000_fix_privilege_escalation_and_harden_rls.sql` restricts `complete_outbox_job` execution exclusively to `service_role` (revoked from `PUBLIC` and `authenticated`).
+    - Binds outbox job completion to confirmed `tx_hash`, `record_hash`, and `project_id` in `blockchain_records`. Fabricated, unmined, mismatched, or cross-project transaction hashes are rejected.
+    - Validated in `tests/security/database-integration.test.ts`.
+16. **Blockchain Identity & Network Enforcement**:
+    - `scripts/smoke-test.ts` enforces mandatory `BLOCKCHAIN_CHAIN_ID` in release mode and verifies RPC network identity against `eth_chainId`.
+    - Verifies deployed contract bytecode via `eth_getCode` and checks multi-method contract interface identity (`CARBON_DECIMALS() = 3`, valid `owner()`, and `getLatestAnchor()`).
+    - Added automated resilience test suite (`tests/deployment/smoke-test-resilience.test.ts`) covering wrong chain ID, missing contract code, malformed RPC response, and RPC timeout.
 
 ---
 

@@ -667,4 +667,25 @@ test("DB Integration: complete_outbox_job explicitly marks job complete and clea
   await assert.rejects(async () => {
     await db.query(`SELECT public.complete_outbox_job('${bogusJobId}', '${unverifiedTxHash}');`);
   }, /Integrity Error: Cannot complete outbox job with unverified transaction hash/);
+
+  // 4. Mismatched record hash check: supplied record_hash does not match confirmed record
+  const mismatchedRecordHash = "0x" + "e".repeat(64);
+  await assert.rejects(async () => {
+    await db.query(
+      `SELECT public.complete_outbox_job('${bogusJobId}', '${txHash}', '${mismatchedRecordHash}');`,
+    );
+  }, /Integrity Error: Supplied record hash/);
+
+  // 5. Unrelated project check: confirmed txHash from another project is rejected
+  const otherProjectId = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+  const otherJobId = "33333333-4444-5555-6666-777777777777";
+  await db.exec(`
+    INSERT INTO public.projects (id, owner_id, owner_email, project_code, name, status, estimated_carbon)
+    VALUES ('${otherProjectId}', '${nonVerifierId}', 'owner@test.org', 'BC-MNG-OTHER', 'Other Project', 'VERIFIED_PENDING_ANCHOR', 200);
+    INSERT INTO public.blockchain_outbox (id, project_id, payload, status)
+    VALUES ('${otherJobId}', '${otherProjectId}', '{"test": 3}'::jsonb, 'PENDING');
+  `);
+  await assert.rejects(async () => {
+    await db.query(`SELECT public.complete_outbox_job('${otherJobId}', '${txHash}');`);
+  }, /Integrity Error: Cannot complete outbox job with unverified transaction hash/);
 });

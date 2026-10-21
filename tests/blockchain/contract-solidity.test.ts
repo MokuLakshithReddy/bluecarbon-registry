@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
 // @ts-expect-error - solc is a CJS compiler module
 import solc from "solc";
+import { createVM } from "@ethereumjs/vm";
+import { createBlock } from "@ethereumjs/block";
+import { createAddressFromString } from "@ethereumjs/util";
 import {
   BLUE_CARBON_REGISTRY_ABI,
   toMilliTco2e,
@@ -165,128 +168,242 @@ test("Contract ABI: Interface encodes and decodes anchorRecord and events with f
   assert.strictEqual(parsedLog.args["verifier"].toLowerCase(), testVerifierAddress.toLowerCase());
 });
 
-test("Contract RBAC Simulation: Authorized vs Unauthorized verifier behavior", () => {
-  const authorizedVerifiers = new Set<string>();
-  const anchoredRecords = new Map<
-    string,
-    { projectCode: string; milliTco2e: bigint; timestamp: bigint; verifier: string }
-  >();
-  let owner = "0x1111111111111111111111111111111111111111".toLowerCase();
-  authorizedVerifiers.add(owner); // Deployer is auto-authorized
+test("Contract EVM Deployment & RBAC State Machine: Real EVM execution tests authorization, revocation, zero addresses, on-chain reverts, events, duplicate rejection, and ownership transfer", async () => {
+  const source = fs.readFileSync(CONTRACT_SOURCE_PATH, "utf-8");
+  const input = {
+    language: "Solidity",
+    sources: { "BlueCarbonRegistry.sol": { content: source } },
+    settings: { outputSelection: { "*": { "*": ["abi", "evm.bytecode"] } } },
+  };
+  const output = JSON.parse(solc.compile(JSON.stringify(input)));
+  const artifact = output.contracts?.["BlueCarbonRegistry.sol"]?.["BlueCarbonRegistry"];
+  assert.ok(artifact?.evm?.bytecode?.object, "Bytecode must be present");
 
-  function anchorRecord(
-    caller: string,
-    recordHash: string,
-    projectCode: string,
-    milliTco2e: bigint,
-  ) {
-    const norm = caller.toLowerCase();
-    if (!authorizedVerifiers.has(norm) && norm !== owner) {
-      throw new Error(`UnauthorizedVerifier: caller ${caller} is not an authorized verifier`);
-    }
-    if (recordHash === ethers.ZeroHash || !recordHash || recordHash === "0x0") {
-      throw new Error("InvalidRecordHash: recordHash cannot be zero");
-    }
-    if (anchoredRecords.has(recordHash)) {
-      throw new Error(`RecordAlreadyAnchored: recordHash ${recordHash} has already been anchored`);
-    }
-    anchoredRecords.set(recordHash, {
-      projectCode,
-      milliTco2e,
-      timestamp: BigInt(Date.now()),
-      verifier: norm,
+  const bytecode = Buffer.from(artifact.evm.bytecode.object, "hex");
+  const iface = new ethers.Interface(artifact.abi);
+
+  const vm = await createVM();
+  const testBlock = createBlock({ header: { timestamp: 1770000000n, number: 100n } });
+
+  const ownerStr = "0x1111111111111111111111111111111111111111";
+  const verifierStr = "0x2222222222222222222222222222222222222222";
+  const attackerStr = "0x9999999999999999999999999999999999999999";
+  const newOwnerStr = "0x3333333333333333333333333333333333333333";
+
+  const ownerAddr = createAddressFromString(ownerStr);
+  const verifierAddr = createAddressFromString(verifierStr);
+  const attackerAddr = createAddressFromString(attackerStr);
+  const newOwnerAddr = createAddressFromString(newOwnerStr);
+
+  // Deploy contract onto EVM
+  const deployRes = await vm.evm.runCall({
+    block: testBlock,
+    caller: ownerAddr,
+    data: bytecode,
+    gasLimit: 10_000_000n,
+  });
+  assert.strictEqual(
+    deployRes.execResult.exceptionError,
+    undefined,
+    "Contract deployment must not revert",
+  );
+  const contractAddr = deployRes.createdAddress!;
+  assert.ok(contractAddr, "Created contract address must be present");
+
+  // Helper for contract calls
+  async function call(caller: typeof ownerAddr | undefined, data: string) {
+    const res = await vm.evm.runCall({
+      block: testBlock,
+      caller,
+      to: contractAddr,
+      data: Buffer.from(data.slice(2), "hex"),
+      gasLimit: 3_000_000n,
     });
-    return true;
+    return res.execResult;
   }
 
-  function authorizeVerifier(caller: string, newVerifier: string) {
-    if (caller.toLowerCase() !== owner) {
-      throw new Error("OnlyOwner: caller is not contract owner");
-    }
-    if (newVerifier === ethers.ZeroAddress) {
-      throw new Error("ZeroAddress: cannot authorize zero address");
-    }
-    authorizedVerifiers.add(newVerifier.toLowerCase());
-  }
+  // 1. Initial State: check owner and constants
+  const ownerRes = await call(undefined, iface.encodeFunctionData("owner"));
+  const initialOwner = iface.decodeFunctionResult("owner", ownerRes.returnValue)[0];
+  assert.strictEqual(
+    initialOwner.toLowerCase(),
+    ownerStr.toLowerCase(),
+    "Deployer must be initial owner",
+  );
 
-  function revokeVerifier(caller: string, verifierToRevoke: string) {
-    if (caller.toLowerCase() !== owner) {
-      throw new Error("OnlyOwner: caller is not contract owner");
-    }
-    if (verifierToRevoke === ethers.ZeroAddress) {
-      throw new Error("ZeroAddress: cannot revoke zero address");
-    }
-    authorizedVerifiers.delete(verifierToRevoke.toLowerCase());
-  }
+  const decimalsRes = await call(undefined, iface.encodeFunctionData("CARBON_DECIMALS"));
+  assert.strictEqual(
+    Number(iface.decodeFunctionResult("CARBON_DECIMALS", decimalsRes.returnValue)[0]),
+    3,
+  );
 
-  function transferOwnership(caller: string, newOwner: string) {
-    if (caller.toLowerCase() !== owner) {
-      throw new Error("OnlyOwner: caller is not contract owner");
-    }
-    if (newOwner === ethers.ZeroAddress) {
-      throw new Error("ZeroAddress: cannot transfer to zero address");
-    }
-    owner = newOwner.toLowerCase();
-  }
-
-  const authorizedVerifier = "0x2222222222222222222222222222222222222222";
-  const unauthorizedAttacker = "0x9999999999999999999999999999999999999999";
+  // 2. Unauthorized caller attempts to anchor -> reverts with UnauthorizedVerifier
   const sampleHash1 = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const unauthAnchor = await call(
+    attackerAddr,
+    iface.encodeFunctionData("anchorRecord", [sampleHash1, "BC-MNG-001", 1000n]),
+  );
+  assert.ok(unauthAnchor.exceptionError != null, "Unauthorized call must revert on EVM");
+  const unauthErr = iface.parseError("0x" + Buffer.from(unauthAnchor.returnValue).toString("hex"));
+  assert.strictEqual(unauthErr?.name, "UnauthorizedVerifier");
+  assert.strictEqual(unauthErr?.args[0].toLowerCase(), attackerStr.toLowerCase());
+
+  // 3. Non-owner attempts to authorize verifier -> reverts with OnlyOwner
+  const nonOwnerAuth = await call(
+    attackerAddr,
+    iface.encodeFunctionData("authorizeVerifier", [verifierStr]),
+  );
+  assert.ok(nonOwnerAuth.exceptionError != null, "Non-owner authorize must revert on EVM");
+  const onlyErr = iface.parseError("0x" + Buffer.from(nonOwnerAuth.returnValue).toString("hex"));
+  assert.strictEqual(onlyErr?.name, "OnlyOwner");
+
+  // 4. Owner attempts to authorize zero address -> reverts with ZeroAddress
+  const zeroAuth = await call(
+    ownerAddr,
+    iface.encodeFunctionData("authorizeVerifier", [ethers.ZeroAddress]),
+  );
+  assert.ok(zeroAuth.exceptionError != null, "Zero address authorize must revert on EVM");
+  const zeroErr = iface.parseError("0x" + Buffer.from(zeroAuth.returnValue).toString("hex"));
+  assert.strictEqual(zeroErr?.name, "ZeroAddress");
+
+  // 5. Owner authorizes verifier -> succeeds and emits VerifierAuthorized
+  const authTx = await call(
+    ownerAddr,
+    iface.encodeFunctionData("authorizeVerifier", [verifierStr]),
+  );
+  assert.strictEqual(authTx.exceptionError, undefined, "Owner authorizeVerifier must succeed");
+  assert.strictEqual(authTx.logs.length, 1, "Must emit exactly 1 event");
+  const authLog = iface.parseLog({
+    topics: authTx.logs[0]![1].map((b: Uint8Array) => "0x" + Buffer.from(b).toString("hex")),
+    data: "0x" + Buffer.from(authTx.logs[0]![2]).toString("hex"),
+  });
+  assert.strictEqual(authLog?.name, "VerifierAuthorized");
+  assert.strictEqual(authLog?.args[0].toLowerCase(), verifierStr.toLowerCase());
+
+  // Verify getter isAuthorizedVerifier returns true
+  const isAuthRes = await call(
+    undefined,
+    iface.encodeFunctionData("isAuthorizedVerifier", [verifierStr]),
+  );
+  assert.strictEqual(
+    iface.decodeFunctionResult("isAuthorizedVerifier", isAuthRes.returnValue)[0],
+    true,
+  );
+
+  // 6. Authorized verifier anchors record -> succeeds and emits RecordAnchored
+  const anchorTx = await call(
+    verifierAddr,
+    iface.encodeFunctionData("anchorRecord", [sampleHash1, "BC-MNG-001", 520650n]),
+  );
+  assert.strictEqual(anchorTx.exceptionError, undefined, "Authorized anchorRecord must succeed");
+  assert.strictEqual(anchorTx.logs.length, 1, "Must emit RecordAnchored event");
+  const anchorLog = iface.parseLog({
+    topics: anchorTx.logs[0]![1].map((b: Uint8Array) => "0x" + Buffer.from(b).toString("hex")),
+    data: "0x" + Buffer.from(anchorTx.logs[0]![2]).toString("hex"),
+  });
+  assert.strictEqual(anchorLog?.name, "RecordAnchored");
+  assert.strictEqual(anchorLog?.args["recordHash"], sampleHash1);
+  assert.strictEqual(anchorLog?.args["projectCode"], "BC-MNG-001");
+  assert.strictEqual(anchorLog?.args["verifiedCarbonMilliTco2e"], 520650n);
+
+  // 7. Verify record stored values via read-only call
+  const verifyRes = await call(undefined, iface.encodeFunctionData("verifyRecord", [sampleHash1]));
+  const decodedRecord = iface.decodeFunctionResult("verifyRecord", verifyRes.returnValue);
+  assert.strictEqual(decodedRecord[0], true, "Record exists must be true");
+  assert.strictEqual(decodedRecord[1], "BC-MNG-001");
+  assert.strictEqual(decodedRecord[2], 520650n);
+  assert.strictEqual(decodedRecord[3], 100n, "Block number must match block");
+  assert.strictEqual(decodedRecord[4], 1770000000n, "Timestamp must match block");
+  assert.strictEqual(decodedRecord[5].toLowerCase(), verifierStr.toLowerCase());
+
+  // Latest anchor getter
+  const latestRes = await call(
+    undefined,
+    iface.encodeFunctionData("getLatestAnchor", ["BC-MNG-001"]),
+  );
+  assert.strictEqual(
+    iface.decodeFunctionResult("getLatestAnchor", latestRes.returnValue)[0],
+    sampleHash1,
+  );
+
+  // 8. Duplicate anchoring of the same hash -> reverts on EVM with RecordAlreadyAnchored
+  const dupAnchor = await call(
+    verifierAddr,
+    iface.encodeFunctionData("anchorRecord", [sampleHash1, "BC-MNG-001", 520650n]),
+  );
+  assert.ok(dupAnchor.exceptionError != null, "Duplicate anchor must revert on EVM");
+  const dupErr = iface.parseError("0x" + Buffer.from(dupAnchor.returnValue).toString("hex"));
+  assert.strictEqual(dupErr?.name, "RecordAlreadyAnchored");
+  assert.strictEqual(dupErr?.args[0], sampleHash1);
+
+  // 9. Zero hash anchoring -> reverts with InvalidRecordHash
+  const zeroHashAnchor = await call(
+    verifierAddr,
+    iface.encodeFunctionData("anchorRecord", [ethers.ZeroHash, "BC-MNG-001", 520650n]),
+  );
+  assert.ok(zeroHashAnchor.exceptionError != null, "Zero hash anchor must revert on EVM");
+  const zeroHashErr = iface.parseError(
+    "0x" + Buffer.from(zeroHashAnchor.returnValue).toString("hex"),
+  );
+  assert.strictEqual(zeroHashErr?.name, "InvalidRecordHash");
+
+  // 10. Owner revokes verifier -> subsequent anchoring reverts with UnauthorizedVerifier
   const sampleHash2 = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-
-  // 1. Unauthorized caller fails to anchor
-  assert.throws(
-    () => anchorRecord(unauthorizedAttacker, sampleHash1, "BC-001", 1000n),
-    /UnauthorizedVerifier/,
-    "Unauthorized address must be rejected",
+  const revokeTx = await call(ownerAddr, iface.encodeFunctionData("revokeVerifier", [verifierStr]));
+  assert.strictEqual(revokeTx.exceptionError, undefined, "Owner revokeVerifier must succeed");
+  const isRevokedRes = await call(
+    undefined,
+    iface.encodeFunctionData("isAuthorizedVerifier", [verifierStr]),
+  );
+  assert.strictEqual(
+    iface.decodeFunctionResult("isAuthorizedVerifier", isRevokedRes.returnValue)[0],
+    false,
   );
 
-  // 2. Non-owner cannot authorize verifiers
-  assert.throws(
-    () => authorizeVerifier(unauthorizedAttacker, authorizedVerifier),
-    /OnlyOwner/,
-    "Non-owner cannot grant verifier rights",
+  const revokedAnchor = await call(
+    verifierAddr,
+    iface.encodeFunctionData("anchorRecord", [sampleHash2, "BC-MNG-002", 1000n]),
+  );
+  assert.ok(revokedAnchor.exceptionError != null, "Revoked verifier anchor must revert on EVM");
+  const revokedErr = iface.parseError(
+    "0x" + Buffer.from(revokedAnchor.returnValue).toString("hex"),
+  );
+  assert.strictEqual(revokedErr?.name, "UnauthorizedVerifier");
+
+  // 11. Ownership transfer to new governor
+  const transferTx = await call(
+    ownerAddr,
+    iface.encodeFunctionData("transferOwnership", [newOwnerStr]),
+  );
+  assert.strictEqual(transferTx.exceptionError, undefined, "transferOwnership must succeed");
+  const newOwnerCheck = await call(undefined, iface.encodeFunctionData("owner"));
+  assert.strictEqual(
+    iface.decodeFunctionResult("owner", newOwnerCheck.returnValue)[0].toLowerCase(),
+    newOwnerStr.toLowerCase(),
   );
 
-  // 3. Owner authorizes verifier -> anchoring succeeds
-  authorizeVerifier(owner, authorizedVerifier);
-  assert.strictEqual(anchorRecord(authorizedVerifier, sampleHash1, "BC-001", 1000n), true);
-
-  // 4. Duplicate anchoring of the same recordHash MUST REVERT
-  assert.throws(
-    () => anchorRecord(authorizedVerifier, sampleHash1, "BC-001", 1000n),
-    /RecordAlreadyAnchored/,
-    "Re-anchoring the same recordHash must revert immediately",
+  // Old owner can no longer authorize verifiers
+  const oldOwnerAuth = await call(
+    ownerAddr,
+    iface.encodeFunctionData("authorizeVerifier", [verifierStr]),
+  );
+  assert.ok(oldOwnerAuth.exceptionError != null, "Old owner authorize must revert");
+  assert.strictEqual(
+    iface.parseError("0x" + Buffer.from(oldOwnerAuth.returnValue).toString("hex"))?.name,
+    "OnlyOwner",
   );
 
-  // 5. Zero recordHash is rejected
-  assert.throws(
-    () => anchorRecord(authorizedVerifier, ethers.ZeroHash, "BC-001", 1000n),
-    /InvalidRecordHash/,
-    "Zero bytes32 recordHash must revert",
+  // New owner re-authorizes verifier -> anchoring succeeds on EVM
+  await call(newOwnerAddr, iface.encodeFunctionData("authorizeVerifier", [verifierStr]));
+  const reAuthAnchor = await call(
+    verifierAddr,
+    iface.encodeFunctionData("anchorRecord", [sampleHash2, "BC-MNG-002", 2000n]),
   );
-
-  // 6. Owner revokes verifier -> subsequent anchoring now fails
-  revokeVerifier(owner, authorizedVerifier);
-  assert.throws(
-    () => anchorRecord(authorizedVerifier, sampleHash2, "BC-002", 2000n),
-    /UnauthorizedVerifier/,
-    "Revoked verifier must be blocked from anchoring",
+  assert.strictEqual(
+    reAuthAnchor.exceptionError,
+    undefined,
+    "Anchoring by re-authorized verifier must succeed",
   );
-
-  // 7. Ownership transfer enables new governor to manage verifiers
-  const oldOwner = owner;
-  const newGovernor = "0x3333333333333333333333333333333333333333";
-  transferOwnership(oldOwner, newGovernor);
-  assert.throws(
-    () => authorizeVerifier(oldOwner, authorizedVerifier),
-    /OnlyOwner/,
-    "Old owner loses verifier authorization privileges",
-  );
-
-  // New owner re-authorizes verifier -> anchoring succeeds again
-  authorizeVerifier(newGovernor, authorizedVerifier);
-  assert.strictEqual(anchorRecord(authorizedVerifier, sampleHash2, "BC-002", 2000n), true);
 });
 
 test("Contract EVM Execution: Bytecode deploy and call simulation verifies on-chain revert semantics", async () => {

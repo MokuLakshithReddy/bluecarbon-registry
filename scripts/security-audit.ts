@@ -29,39 +29,62 @@ const SECRET_REGEXES = [
   { name: "Private Key Block", regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
 ];
 
-const IGNORED_PATHS = [
-  "node_modules",
-  ".output",
-  "dist",
-  ".wrangler",
-  "package-lock.json",
-  "tests/security/threat-model-audit.test.ts",
-  "tests/blockchain/contract-solidity.test.ts", // Local Hardhat test keys
-  "tests/blockchain/evm-provider.test.ts", // Anvil/Hardhat mock keys
-  "tests/blockchain/blockchain-resilience.test.ts",
-];
+const IGNORED_PATHS = ["node_modules", ".output", "dist", ".wrangler", "package-lock.json"];
 
-const SYNTHETIC_MOCK_HEX_STRINGS = [
-  "00000000000000000000000000000000",
-  "your-key-here",
-  "your-service-role-key-here",
-  "[REDACTED",
-  "TEST_SIGNER_KEY",
-  "TEST_CONTRACT_ADDRESS",
-  "0x0123456789abcdef",
-  "0x1234567890abcdef",
-  "0xabcdef1234567890",
-  "0xaaaaaaaaaaaaaaaa",
-  "0xbbbbbbbbbbbbbbbb",
-  "0x9999999999999999",
-  "0x8888888888888888",
-  "0x1dcc4de8dec75d7a",
-  "0x56e81f171bcc55a6",
-  "0xd5855eb95b30d525",
-];
+// Explicit, reviewed list of synthetic fixture hashes used in unit and EVM tests
+export const REVIEWED_TEST_FIXTURE_HASHES = new Set([
+  "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+  "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+  "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+  "0xd5855eb95b30d52503254924c13061719ad91981d9b52a5c040d980836519177",
+  "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "0x2222222222222222222222222222222222222222222222222222222222222222",
+  "0x3333333333333333333333333333333333333333333333333333333333333333",
+  "0x8888888888888888888888888888888888888888888888888888888888888888",
+  "0x9999999999999999999999999999999999999999999999999999999999999999",
+  "0x437ed705ea2c9ae29f9e8bcf1a64658661c930cb6ef90e3f970957be7e4a1679",
+]);
 
-function isSyntheticFixture(text: string): boolean {
-  return SYNTHETIC_MOCK_HEX_STRINGS.some((s) => text.includes(s));
+export function isAllowedTestFixture(matchedSecret: string): boolean {
+  return REVIEWED_TEST_FIXTURE_HASHES.has(matchedSecret.toLowerCase());
+}
+
+export function scanTextForSecrets(content: string, filePath: string): Finding[] {
+  const findings: Finding[] = [];
+  const lines = content.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+
+    // Skip example files or definition files that document regex patterns
+    if (
+      filePath.endsWith(".example") ||
+      filePath.includes("security-audit.ts") ||
+      filePath.includes("secret-audit-canary.test.ts") ||
+      filePath.includes("observability.ts")
+    ) {
+      continue;
+    }
+
+    for (const { name, regex } of SECRET_REGEXES) {
+      const match = line.match(regex);
+      if (match) {
+        const matchedStr = match[0];
+        // Allow ONLY explicitly reviewed synthetic test fixture hashes
+        if (isAllowedTestFixture(matchedStr)) {
+          continue;
+        }
+        findings.push({ file: filePath, line: i + 1, pattern: name });
+      }
+    }
+  }
+
+  return findings;
 }
 
 function scanDirectory(dir: string): Finding[] {
@@ -88,26 +111,7 @@ function scanDirectory(dir: string): Finding[] {
       if (/\.(png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot)$/i.test(entry.name)) continue;
 
       const content = fs.readFileSync(fullPath, "utf-8");
-      const lines = content.split("\n");
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]!;
-        // Skip obvious dummy placeholder comments / examples
-        if (
-          isSyntheticFixture(line) ||
-          relPath.endsWith(".example") ||
-          relPath.includes("security-audit.ts") || // Self file
-          relPath.includes("observability.ts") // Pattern definition file
-        ) {
-          continue;
-        }
-
-        for (const { name, regex } of SECRET_REGEXES) {
-          if (regex.test(line)) {
-            findings.push({ file: relPath, line: i + 1, pattern: name });
-          }
-        }
-      }
+      findings.push(...scanTextForSecrets(content, relPath));
     }
   }
 
@@ -141,23 +145,26 @@ export function scanGitHistory(): { findings: Finding[]; error?: string } {
       }
       if (!line.startsWith("+") || line.startsWith("+++")) continue;
 
-      // Skip test mocks and fixture files that intentionally contain mock keys
+      // Skip self-files documenting regexes
       if (
-        currentFile.includes("tests/blockchain/") ||
-        currentFile.includes("tests/security/") ||
         currentFile.includes("scripts/security-audit.ts") ||
-        currentFile.includes("src/lib/observability.ts")
+        currentFile.includes("src/lib/observability.ts") ||
+        currentFile.includes("secret-audit-canary.test.ts") ||
+        currentFile.endsWith(".example")
       ) {
         continue;
       }
 
       const addedContent = line.substring(1);
-      if (isSyntheticFixture(addedContent)) {
-        continue;
-      }
 
       for (const { name, regex } of SECRET_REGEXES) {
-        if (regex.test(addedContent)) {
+        const match = addedContent.match(regex);
+        if (match) {
+          const matchedStr = match[0];
+          // Allow ONLY explicitly reviewed test hashes
+          if (isAllowedTestFixture(matchedStr)) {
+            continue;
+          }
           historyFindings.push({
             file: `git:commit:${currentCommit}:${currentFile}`,
             line: i + 1,

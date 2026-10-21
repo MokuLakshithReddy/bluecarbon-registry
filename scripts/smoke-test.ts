@@ -10,6 +10,9 @@
  * 4. Blockchain RPC endpoint responds (if configured)
  */
 
+import { ethers } from "ethers";
+import { BLUE_CARBON_REGISTRY_ABI } from "../src/lib/blockchain.server.ts";
+
 interface SmokeCheck {
   name: string;
   passed: boolean;
@@ -247,55 +250,95 @@ export async function runSmokeTests(
             body: codePayload,
             signal: AbortSignal.timeout(5000),
           });
+          const iface = new ethers.Interface(BLUE_CARBON_REGISTRY_ABI);
           const codeJson = (await codeRes.json()) as { result?: string };
-          const hasCode =
-            Boolean(codeJson.result) &&
-            codeJson.result !== "0x" &&
-            codeJson.result !== "0x0" &&
-            codeJson.result!.length > 4;
+          const bytecode = codeJson.result ?? "";
+          const hasCode = bytecode.startsWith("0x") && bytecode.length > 100;
+
+          // Check runtime bytecode hash if EXPECTED_CONTRACT_BYTECODE_HASH is specified
+          const expectedBytecodeHash = process.env["EXPECTED_CONTRACT_BYTECODE_HASH"];
+          let bytecodeHashMatch = true;
+          if (expectedBytecodeHash && hasCode) {
+            const actualBytecodeHash = ethers.keccak256(bytecode);
+            bytecodeHashMatch =
+              actualBytecodeHash.toLowerCase() === expectedBytecodeHash.toLowerCase();
+          }
 
           checks.push({
             name: "Blockchain Contract Code (eth_getCode)",
-            passed: codeRes.status === 200 && hasCode,
+            passed: codeRes.status === 200 && hasCode && bytecodeHashMatch,
             durationMs: Date.now() - cStart,
             details: hasCode
-              ? `Contract bytecode present at ${contractAddress}`
+              ? bytecodeHashMatch
+                ? `Contract bytecode verified at ${contractAddress} (bytes: ${(bytecode.length - 2) / 2})`
+                : `Bytecode hash mismatch! Expected ${expectedBytecodeHash}, got ${ethers.keccak256(bytecode)}`
               : `No contract code deployed at ${contractAddress}`,
           });
 
-          // 5c. Read-only contract call: CARBON_DECIMALS() getter (selector 0x140e6988)
+          // 5c. Multi-method interface & identity validation
           if (hasCode) {
             const callStart = Date.now();
             try {
-              // CARBON_DECIMALS() public constant getter selector: bytes4(keccak256("CARBON_DECIMALS()")) = 0x140e6988
-              const callPayload = JSON.stringify({
+              // 1. CARBON_DECIMALS() call
+              const decimalsPayload = JSON.stringify({
                 jsonrpc: "2.0",
                 method: "eth_call",
-                params: [{ to: contractAddress, data: "0x140e6988" }, "latest"],
+                params: [
+                  { to: contractAddress, data: iface.encodeFunctionData("CARBON_DECIMALS") },
+                  "latest",
+                ],
                 id: 4,
               });
-              const callRes = await fetch(rpcUrl, {
+              const decRes = await fetch(rpcUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: callPayload,
+                body: decimalsPayload,
                 signal: AbortSignal.timeout(5000),
               });
-              const callJson = (await callRes.json()) as { result?: string };
-              // Decimals should return uint8 = 3 (0x...03)
-              const decimalsValue = callJson.result ? parseInt(callJson.result, 16) : null;
-              const isCorrectRegistry = decimalsValue === 3;
+              const decJson = (await decRes.json()) as { result?: string };
+              const decimals = decJson.result
+                ? Number(iface.decodeFunctionResult("CARBON_DECIMALS", decJson.result)[0])
+                : null;
+              const isCorrectDecimals = decimals === 3;
+
+              // 2. owner() call
+              const ownerPayload = JSON.stringify({
+                jsonrpc: "2.0",
+                method: "eth_call",
+                params: [
+                  { to: contractAddress, data: iface.encodeFunctionData("owner") },
+                  "latest",
+                ],
+                id: 5,
+              });
+              const ownerRes = await fetch(rpcUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: ownerPayload,
+                signal: AbortSignal.timeout(5000),
+              });
+              const ownerJson = (await ownerRes.json()) as { result?: string };
+              const ownerAddress = ownerJson.result
+                ? String(iface.decodeFunctionResult("owner", ownerJson.result)[0])
+                : null;
+              const hasValidOwner =
+                Boolean(ownerAddress) &&
+                ethers.isAddress(ownerAddress) &&
+                ownerAddress !== ethers.ZeroAddress;
+
+              const isVerifiedIdentity = isCorrectDecimals && hasValidOwner;
 
               checks.push({
-                name: "Blockchain Contract Interface (CARBON_DECIMALS)",
-                passed: isCorrectRegistry,
+                name: "Blockchain Contract Interface & Identity Fingerprint",
+                passed: isVerifiedIdentity,
                 durationMs: Date.now() - callStart,
-                details: isCorrectRegistry
-                  ? "Registry interface verified: CARBON_DECIMALS = 3"
-                  : `Unexpected contract response: ${callJson.result ?? "no result"}`,
+                details: isVerifiedIdentity
+                  ? `Registry interface verified: CARBON_DECIMALS = 3, Owner = ${ownerAddress}`
+                  : `Contract response mismatch: decimals = ${decimals}, owner = ${ownerAddress}`,
               });
             } catch (err) {
               checks.push({
-                name: "Blockchain Contract Interface (CARBON_DECIMALS)",
+                name: "Blockchain Contract Interface & Identity Fingerprint",
                 passed: false,
                 durationMs: Date.now() - callStart,
                 details: `Contract eth_call error: ${String(err)}`,

@@ -944,6 +944,10 @@ BEGIN
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Integrity Error: Cannot complete outbox job with unverified transaction hash %', _tx_hash;
     END IF;
+
+    IF _record_hash IS NOT NULL AND _record_hash != v_rec.record_hash THEN
+      RAISE EXCEPTION 'Integrity Error: Supplied record hash % does not match confirmed on-chain record hash %', _record_hash, v_rec.record_hash;
+    END IF;
   ELSE
     SELECT * INTO v_rec FROM public.blockchain_records
     WHERE project_id = v_job.project_id AND status = 'CONFIRMED'
