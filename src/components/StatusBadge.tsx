@@ -6,6 +6,7 @@ const STATUS_STYLES: Record<ProjectStatus, string> = {
   SUBMITTED: "bg-info/10 text-info border-info/30",
   UNDER_REVIEW: "bg-warning/15 text-warning-foreground border-warning/40",
   CORRECTION_REQUIRED: "bg-warning/20 text-warning-foreground border-warning/50",
+  VERIFIED_PENDING_ANCHOR: "bg-amber-500/15 text-amber-500 border-amber-500/35",
   VERIFIED: "bg-success/12 text-success border-success/35",
   REJECTED: "bg-destructive/10 text-destructive border-destructive/30",
 };

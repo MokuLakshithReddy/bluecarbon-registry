@@ -22,6 +22,12 @@ interface MockRpcOptions {
   recordExists?: boolean;
   receiptToAddress?: string;
   emitExpectedEvent?: boolean;
+  eventProjectCode?: string;
+  eventCarbonMilli?: bigint;
+  eventVerifier?: string;
+  contractProjectCode?: string;
+  contractCarbonMilli?: bigint;
+  contractVerifier?: string;
 }
 
 function startMockRpcServer(opts: MockRpcOptions = {}) {
@@ -29,6 +35,14 @@ function startMockRpcServer(opts: MockRpcOptions = {}) {
   const recordExists = opts.recordExists ?? true;
   const receiptTo = (opts.receiptToAddress ?? TEST_CONTRACT_ADDRESS).toLowerCase();
   const emitEvent = opts.emitExpectedEvent ?? true;
+
+  const eventProjectCode = opts.eventProjectCode ?? "BC-MNG-0001";
+  const eventCarbonMilli = opts.eventCarbonMilli ?? 520650n;
+  const eventVerifier = opts.eventVerifier ?? TEST_CONTRACT_ADDRESS;
+
+  const contractProjectCode = opts.contractProjectCode ?? "BC-MNG-0001";
+  const contractCarbonMilli = opts.contractCarbonMilli ?? 520650n;
+  const contractVerifier = opts.contractVerifier ?? TEST_CONTRACT_ADDRESS;
 
   let receivedRawTx: string | null = null;
   let decodedAnchorArgs: ethers.Result | null = null;
@@ -106,10 +120,10 @@ function startMockRpcServer(opts: MockRpcOptions = {}) {
                 if (eventDesc) {
                   const encodedLog = iface.encodeEventLog(eventDesc, [
                     "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-                    "BC-MNG-0001",
-                    520650n,
+                    eventProjectCode,
+                    eventCarbonMilli,
                     1700000000n,
-                    TEST_CONTRACT_ADDRESS,
+                    eventVerifier,
                   ]);
                   logs.push({
                     address: TEST_CONTRACT_ADDRESS,
@@ -141,11 +155,11 @@ function startMockRpcServer(opts: MockRpcOptions = {}) {
               // Return verifyRecord tuple: (bool exists, string projectCode, uint256 verifiedCarbonMilliTco2e, uint256 blockNumber, uint256 timestamp, address verifier)
               const encoded = iface.encodeFunctionResult("verifyRecord", [
                 recordExists,
-                "BC-MNG-0001",
-                520650n,
+                contractProjectCode,
+                contractCarbonMilli,
                 256n,
                 1700000000n,
-                TEST_CONTRACT_ADDRESS,
+                contractVerifier,
               ]);
               return encoded;
             }
@@ -419,4 +433,191 @@ test("EVM Provider: reports FAILED when RPC is unreachable (never fabricates has
   assert.strictEqual(result.simulated, false);
   assert.strictEqual(result.tx_hash, "");
   assert.ok(result.error != null);
+});
+
+test("EVM Provider: verification fails if event projectCode and contract storage projectCode disagree", async () => {
+  const mockRpc = await startMockRpcServer({
+    eventProjectCode: "BC-MNG-EVENT-MISMATCH",
+    contractProjectCode: "BC-MNG-STORAGE-DIFF",
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    );
+
+    assert.strictEqual(report.isVerified, false);
+    assert.ok(report.error?.includes("Project code mismatch"));
+  } finally {
+    await mockRpc.close();
+  }
+});
+
+test("EVM Provider: verification fails if event carbon quantity and contract storage carbon disagree", async () => {
+  const mockRpc = await startMockRpcServer({
+    eventCarbonMilli: 500000n, // 500 tCO2e
+    contractCarbonMilli: 600000n, // 600 tCO2e
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    );
+
+    assert.strictEqual(report.isVerified, false);
+    assert.ok(report.error?.includes("Carbon quantity mismatch"));
+  } finally {
+    await mockRpc.close();
+  }
+});
+
+test("EVM Provider: verification fails if event verifier and contract storage verifier disagree", async () => {
+  const mockRpc = await startMockRpcServer({
+    eventVerifier: "0x1111111111111111111111111111111111111111",
+    contractVerifier: "0x2222222222222222222222222222222222222222",
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    );
+
+    assert.strictEqual(report.isVerified, false);
+    assert.ok(report.error?.includes("Verifier address mismatch"));
+  } finally {
+    await mockRpc.close();
+  }
+});
+
+test("EVM Provider: verification fails if expected payload projectCode does not match on-chain record", async () => {
+  const mockRpc = await startMockRpcServer({
+    eventProjectCode: "BC-MNG-0001",
+    contractProjectCode: "BC-MNG-0001",
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+      { project_code: "BC-MNG-DIFFERENT" },
+    );
+
+    assert.strictEqual(report.isVerified, false);
+    assert.ok(report.error?.includes("Expected project code 'BC-MNG-DIFFERENT' does not match"));
+  } finally {
+    await mockRpc.close();
+  }
+});
+
+test("EVM Provider: verification fails if expected payload carbon quantity does not match on-chain record", async () => {
+  const mockRpc = await startMockRpcServer({
+    eventCarbonMilli: 520650n,
+    contractCarbonMilli: 520650n,
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+      { verified_tco2e: 999.99 },
+    );
+
+    assert.strictEqual(report.isVerified, false);
+    assert.ok(report.error?.includes("Expected carbon quantity 999.99 tCO2e does not match"));
+  } finally {
+    await mockRpc.close();
+  }
+});
+
+test("EVM Provider: verification succeeds when expected payload matches all event and contract storage values", async () => {
+  const mockRpc = await startMockRpcServer({
+    eventProjectCode: "BC-MNG-0001",
+    contractProjectCode: "BC-MNG-0001",
+    eventCarbonMilli: 520650n,
+    contractCarbonMilli: 520650n,
+    eventVerifier: TEST_CONTRACT_ADDRESS,
+    contractVerifier: TEST_CONTRACT_ADDRESS,
+  });
+
+  try {
+    const config: BlockchainConfig = {
+      network: "sepolia",
+      rpcUrl: mockRpc.url,
+      contract: TEST_CONTRACT_ADDRESS,
+      privateKey: TEST_SIGNER_KEY,
+      confirmationsRequired: 1,
+      timeoutMs: 5000,
+    };
+
+    const provider = createEvmProvider(config);
+    const report = await provider.verify(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+      {
+        project_code: "BC-MNG-0001",
+        verified_tco2e: 520.65,
+        verifier_address: TEST_CONTRACT_ADDRESS,
+      },
+    );
+
+    assert.strictEqual(report.isVerified, true);
+    assert.strictEqual(report.anchoredProjectCode, "BC-MNG-0001");
+    assert.strictEqual(report.anchoredCarbonTco2e, 520.65);
+    assert.strictEqual(report.error, undefined);
+  } finally {
+    await mockRpc.close();
+  }
 });

@@ -180,6 +180,18 @@ test("State Machine: approveProject fails closed and refuses non-atomic fallback
               if (table === "user_roles") {
                 return Promise.resolve({ data: rolesData, error: null }).then(resolve);
               }
+              if (table === "evidence") {
+                return Promise.resolve({
+                  data: [
+                    {
+                      id: "00000000-0000-0000-0000-000000000003",
+                      file_name: "survey.pdf",
+                      file_hash: "a".repeat(64),
+                    },
+                  ],
+                  error: null,
+                }).then(resolve);
+              }
               return Promise.resolve({ data: [projectData], error: null }).then(resolve);
             },
             single: async () => ({
@@ -265,4 +277,261 @@ test("State Machine: approveProject fails closed and refuses non-atomic fallback
       comments: "Project area does not meet additionality standards",
     });
   }, /Project rejection failed: atomic database transaction error/);
+});
+
+test("State Machine: Strict evidence validation requires error checks and cryptographic hashes", async () => {
+  const { approveProject } = await import("../../src/lib/registry.server.ts");
+
+  function createClientWithEvidence(evidenceResult: { data: unknown; error: unknown }) {
+    const projectData = {
+      id: "00000000-0000-0000-0000-000000000002",
+      project_code: "BC-MNG-EVID",
+      name: "Evidence Test Mangrove",
+      status: "UNDER_REVIEW",
+      ecosystem: "MANGROVE",
+      estimated_carbon: 500,
+      owner_email: "owner@test.org",
+    };
+
+    return {
+      auth: {
+        getUser: async () => ({
+          data: {
+            user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" },
+          },
+          error: null,
+        }),
+      },
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            then: (resolve: (val: unknown) => void) => {
+              if (table === "user_roles") {
+                return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
+              }
+              if (table === "evidence") {
+                return Promise.resolve(evidenceResult).then(resolve);
+              }
+              return Promise.resolve({ data: [projectData], error: null }).then(resolve);
+            },
+            single: async () => ({ data: projectData, error: null }),
+            maybeSingle: async () => ({
+              data: table === "user_roles" ? { role: "verifier" } : projectData,
+              error: null,
+            }),
+          }),
+        }),
+      }),
+      rpc: async () => ({ data: { success: true }, error: null }),
+    };
+  }
+
+  // 1. Evidence query error fails closed
+  const clientWithError = createClientWithEvidence({
+    data: null,
+    error: { message: "Database connection timeout querying evidence" },
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientWithError as unknown as RegistryClient,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /Failed to retrieve project evidence records: Database connection timeout/,
+    "Must fail closed if evidence retrieval query returns an error",
+  );
+
+  // 2. Empty evidence list rejected
+  const clientEmpty = createClientWithEvidence({ data: [], error: null });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientEmpty as unknown as RegistryClient,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /has no uploaded evidence records. At least one verified evidence document is strictly required/,
+    "Must refuse approval if evidence records list is empty",
+  );
+
+  // 3. Evidence lacking cryptographic hash (or using filename fallback) is rejected
+  const clientBadHash = createClientWithEvidence({
+    data: [
+      { id: "e1", file_name: "survey.pdf", file_hash: "survey.pdf" }, // filename fallback instead of hash
+    ],
+    error: null,
+  });
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: clientBadHash as unknown as RegistryClient,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /lack valid SHA-256 cryptographic content hashes/,
+    "Must refuse approval when evidence lacks 64-char hex SHA-256 hash",
+  );
+});
+
+test("State Machine: approveProject handles anchoring failures and transitions to VERIFIED_PENDING_ANCHOR", async () => {
+  const { approveProject, retryProjectAnchor } = await import("../../src/lib/registry.server.ts");
+  type RegistryClient = Parameters<typeof approveProject>[0]["supabase"];
+
+  let recordedFailure = false;
+  let recordedSuccess = false;
+  let outboxErrorMsg = "";
+
+  const projectData = {
+    id: "00000000-0000-0000-0000-000000000002",
+    project_code: "BC-MNG-ANCHOR",
+    name: "Anchor Test Mangrove",
+    status: "UNDER_REVIEW",
+    ecosystem: "MANGROVE",
+    estimated_carbon: 500,
+    owner_email: "owner@test.org",
+  };
+
+  const validEvidence = [
+    {
+      id: "e1",
+      file_name: "baseline_report.pdf",
+      file_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+  ];
+
+  // Client where perform_verification_decision succeeds, but confirm_blockchain_anchor errors
+  const mockSupabase = {
+    auth: {
+      getUser: async () => ({
+        data: {
+          user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" },
+        },
+        error: null,
+      }),
+    },
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => ({
+          then: (resolve: (val: unknown) => void) => {
+            if (table === "user_roles") {
+              return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
+            }
+            if (table === "evidence") {
+              return Promise.resolve({ data: validEvidence, error: null }).then(resolve);
+            }
+            return Promise.resolve({ data: [projectData], error: null }).then(resolve);
+          },
+          single: async () => ({ data: projectData, error: null }),
+          maybeSingle: async () => ({
+            data: table === "user_roles" ? { role: "verifier" } : projectData,
+            error: null,
+          }),
+        }),
+      }),
+    }),
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === "perform_verification_decision") {
+        return { data: { success: true }, error: null };
+      }
+      if (fn === "confirm_blockchain_anchor") {
+        // Simulate DB failure writing confirmation
+        return { data: null, error: { message: "Lock timeout on blockchain_records table" } };
+      }
+      if (fn === "record_blockchain_failure") {
+        recordedFailure = true;
+        outboxErrorMsg = args._error_message as string;
+        return { data: { success: true }, error: null };
+      }
+      return { data: { success: true }, error: null };
+    },
+  };
+
+  // 1. If confirm_blockchain_anchor fails, approveProject throws critical error
+  await assert.rejects(
+    async () => {
+      await approveProject({
+        supabase: mockSupabase as unknown as RegistryClient,
+        userId: "00000000-0000-0000-0000-000000000001",
+        verifierEmail: "verifier@test.org",
+        projectId: "00000000-0000-0000-0000-000000000002",
+        confirmedCarbon: 500,
+      });
+    },
+    /Critical database error: Failed to record confirmed blockchain anchor.*State remains VERIFIED_PENDING_ANCHOR/,
+    "Must never report VERIFIED when database confirmation of blockchain anchor fails",
+  );
+
+  // 2. Recovery: retryProjectAnchor successfully recovers VERIFIED_PENDING_ANCHOR project
+  const pendingProject = { ...projectData, status: "VERIFIED_PENDING_ANCHOR" };
+  const mockRecoverySupabase = {
+    auth: {
+      getUser: async () => ({
+        data: {
+          user: { id: "00000000-0000-0000-0000-000000000001", email: "verifier@test.org" },
+        },
+        error: null,
+      }),
+    },
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => ({
+          then: (resolve: (val: unknown) => void) => {
+            if (table === "user_roles") {
+              return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
+            }
+            if (table === "evidence") {
+              return Promise.resolve({ data: validEvidence, error: null }).then(resolve);
+            }
+            if (table === "carbon_impact_records") {
+              return Promise.resolve({
+                data: [{ verified_tco2e: 500 }],
+                error: null,
+              }).then(resolve);
+            }
+            return Promise.resolve({ data: [pendingProject], error: null }).then(resolve);
+          },
+          single: async () => ({ data: pendingProject, error: null }),
+          maybeSingle: async () => ({
+            data:
+              table === "user_roles"
+                ? { role: "verifier" }
+                : table === "carbon_impact_records"
+                  ? { verified_tco2e: 500 }
+                  : pendingProject,
+            error: null,
+          }),
+        }),
+      }),
+    }),
+    rpc: async (fn: string) => {
+      if (fn === "confirm_blockchain_anchor") {
+        recordedSuccess = true;
+        return { data: { success: true }, error: null };
+      }
+      return { data: { success: true }, error: null };
+    },
+  };
+
+  const retryResult = await retryProjectAnchor(
+    mockRecoverySupabase as unknown as RegistryClient,
+    pendingProject.id,
+    "00000000-0000-0000-0000-000000000001",
+  );
+
+  assert.strictEqual(retryResult.status, "VERIFIED");
+  assert.strictEqual(
+    recordedSuccess,
+    true,
+    "confirm_blockchain_anchor RPC must be invoked on retry",
+  );
 });

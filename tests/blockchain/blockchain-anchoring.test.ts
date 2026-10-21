@@ -31,7 +31,7 @@ test("Blockchain Anchoring: sha256Hex produces identical digest for canonically 
   assert.match(hashA, /^[0-9a-f]{64}$/);
 });
 
-test("Blockchain Anchoring: simulated provider explicitly flags simulated = true and valid status", async () => {
+test("Blockchain Anchoring: simulated provider explicitly flags simulated = true, status = SIMULATED, and explorer_url = null", async () => {
   const dummyPayload: AnchorPayload = {
     project_code: "BCR-TEST-0001",
     project_name: "Chilika Mangrove Restoration",
@@ -55,17 +55,19 @@ test("Blockchain Anchoring: simulated provider explicitly flags simulated = true
 
   assert.ok(result.record_hash);
   assert.ok(result.tx_hash);
-  assert.strictEqual(result.status, "CONFIRMED");
-  // CRITICAL AUDIT CHECK: In simulated mode, simulated must be TRUE, never masquerading as real on-chain
+  // CRITICAL AUDIT CHECK: Simulated provider returns SIMULATED status, never CONFIRMED
+  assert.strictEqual(result.status, "SIMULATED");
   assert.strictEqual(result.simulated, true);
+  // CRITICAL AUDIT CHECK: explorer_url must be null, never generating misleading explorer links
+  assert.strictEqual(result.explorer_url, null);
   assert.ok(result.network.toLowerCase().includes("simulat"));
 });
 
-test("Blockchain Anchoring: verifyOnChainAnchor returns verification report", async () => {
+test("Blockchain Anchoring: verifyOnChainAnchor rejects simulated records as real on-chain proofs", async () => {
   const report = await verifyOnChainAnchor("0x1234567890abcdef", "abcdef1234567890");
 
-  assert.strictEqual(report.isVerified, true);
+  // CRITICAL AUDIT CHECK: Simulated records can NEVER be presented as genuine on-chain proofs
+  assert.strictEqual(report.isVerified, false);
   assert.strictEqual(report.simulated, true);
-  assert.strictEqual(report.receiptStatus, "SUCCESS");
-  assert.ok(report.blockNumber != null && report.blockNumber > 0);
+  assert.ok(report.error?.includes("Simulated demonstration anchor"));
 });

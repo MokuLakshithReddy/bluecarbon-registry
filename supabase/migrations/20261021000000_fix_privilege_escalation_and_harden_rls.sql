@@ -89,6 +89,35 @@ END; $$;
 REVOKE EXECUTE ON FUNCTION public.admin_assign_role(uuid, public.app_role) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.admin_assign_role(uuid, public.app_role) TO authenticated, service_role;
 
+-- 3b. STATE MACHINE EXTENSION & DURABLE BLOCKCHAIN OUTBOX
+DO $$
+BEGIN
+  ALTER TYPE public.project_status ADD VALUE IF NOT EXISTS 'VERIFIED_PENDING_ANCHOR' BEFORE 'VERIFIED';
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.blockchain_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  payload jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'PENDING',
+  record_hash text,
+  tx_hash text,
+  attempts int NOT NULL DEFAULT 0,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.blockchain_outbox ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "outbox verifier read" ON public.blockchain_outbox;
+CREATE POLICY "outbox verifier read" ON public.blockchain_outbox FOR SELECT TO authenticated USING (public.is_verifier() OR public.has_role(auth.uid(), 'admin'));
+DROP POLICY IF EXISTS "outbox service all" ON public.blockchain_outbox;
+CREATE POLICY "outbox service all" ON public.blockchain_outbox FOR ALL TO service_role USING (true) WITH CHECK (true);
+GRANT SELECT ON public.blockchain_outbox TO authenticated;
+GRANT ALL ON public.blockchain_outbox TO service_role;
+
 -- 4. ATOMIC VERIFICATION DECISION TRANSACTION
 -- Guarantees atomic updates across projects, verification reviews, carbon impact records,
 -- audit logs, timeline and notifications. Enforces strict state machine transitions and concurrency protection.
@@ -152,14 +181,28 @@ BEGIN
       RAISE EXCEPTION 'Invalid carbon value: Confirmed carbon must be a positive number.';
     END IF;
 
-    v_new_status := 'VERIFIED';
+    v_new_status := 'VERIFIED_PENDING_ANCHOR';
     v_review_decision := 'APPROVED';
     v_verified_carbon := _confirmed_carbon;
-    v_action := 'Project verified';
-    v_timeline_label := 'Project Verified';
-    v_timeline_detail := format('Verified carbon impact confirmed: %s tCO2e', round(v_verified_carbon, 2));
-    v_notify_title := format('Project %s has been verified', v_project.project_code);
-    v_notify_body := format('Verified carbon impact: %s tCO2e.', round(v_verified_carbon, 2));
+    v_action := 'Project verified (pending anchor)';
+    v_timeline_label := 'Verification Decision Approved';
+    v_timeline_detail := format('Verification confirmed (%s tCO2e). Queued for durable on-chain anchor.', round(v_verified_carbon, 2));
+    v_notify_title := format('Project %s verification approved', v_project.project_code);
+    v_notify_body := format('Verified carbon impact: %s tCO2e. Queued for blockchain anchoring.', round(v_verified_carbon, 2));
+
+    -- Enqueue durable blockchain anchoring outbox record
+    INSERT INTO public.blockchain_outbox (project_id, payload, status)
+    VALUES (
+      v_project.id,
+      jsonb_build_object(
+        'project_code', v_project.project_code,
+        'verified_carbon', v_verified_carbon,
+        'verifier_id', _verifier_id,
+        'verifier_email', _verifier_email,
+        'comments', _comments
+      ),
+      'PENDING'
+    );
 
   ELSIF _decision = 'REQUEST_CORRECTION' THEN
     IF v_project.status != 'UNDER_REVIEW' THEN
@@ -317,6 +360,162 @@ END; $$;
 
 REVOKE EXECUTE ON FUNCTION public.perform_verification_decision FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.perform_verification_decision TO authenticated, service_role;
+
+-- 4b. CONFIRM ON-CHAIN ANCHOR PROCEDURE
+-- Promotes project from VERIFIED_PENDING_ANCHOR to VERIFIED upon genuine blockchain confirmation.
+CREATE OR REPLACE FUNCTION public.confirm_blockchain_anchor(
+  _project_id uuid,
+  _record_hash text,
+  _tx_hash text,
+  _block_number bigint,
+  _network text,
+  _status text,
+  _verifier_id uuid,
+  _verified_tco2e numeric,
+  _anchored_payload jsonb
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_project public.projects%ROWTYPE;
+  v_now timestamptz := now();
+BEGIN
+  -- Verify caller authorization
+  IF NOT (
+    public.has_role(_verifier_id, 'verifier') OR
+    public.has_role(_verifier_id, 'admin') OR
+    public.is_service_role()
+  ) THEN
+    RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
+  END IF;
+
+  -- Lock project row
+  SELECT * INTO v_project
+  FROM public.projects
+  WHERE id = _project_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Project not found: %', _project_id;
+  END IF;
+
+  IF v_project.status != 'VERIFIED_PENDING_ANCHOR' AND v_project.status != 'VERIFIED' THEN
+    RAISE EXCEPTION 'Invalid transition: Project % is in state %, expected VERIFIED_PENDING_ANCHOR.', v_project.project_code, v_project.status;
+  END IF;
+
+  -- Insert into blockchain_records
+  INSERT INTO public.blockchain_records (
+    project_id,
+    record_hash,
+    tx_hash,
+    block_number,
+    network,
+    status,
+    verifier_id,
+    verified_tco2e,
+    anchored_payload,
+    created_at
+  ) VALUES (
+    _project_id,
+    _record_hash,
+    _tx_hash,
+    _block_number,
+    _network,
+    _status,
+    _verifier_id,
+    _verified_tco2e,
+    _anchored_payload,
+    v_now
+  );
+
+  -- Update project status to VERIFIED
+  UPDATE public.projects
+  SET
+    status = 'VERIFIED',
+    verified_carbon = _verified_tco2e,
+    updated_at = v_now
+  WHERE id = _project_id;
+
+  -- Update outbox record to CONFIRMED
+  UPDATE public.blockchain_outbox
+  SET
+    status = _status,
+    record_hash = _record_hash,
+    tx_hash = _tx_hash,
+    updated_at = v_now
+  WHERE project_id = _project_id AND status = 'PENDING';
+
+  -- Add timeline entry
+  INSERT INTO public.project_timeline (
+    project_id,
+    action,
+    actor_email,
+    label,
+    detail,
+    created_at
+  ) VALUES (
+    _project_id,
+    'Blockchain anchored',
+    'system',
+    'On-Chain Anchoring Confirmed',
+    format('Record anchored on %s (tx: %s, block: %s).', _network, substring(_tx_hash from 1 for 10) || '...', coalesce(_block_number::text, 'pending')),
+    v_now
+  );
+
+  RETURN jsonb_build_object(
+    'project_id', _project_id,
+    'status', 'VERIFIED',
+    'tx_hash', _tx_hash,
+    'record_hash', _record_hash
+  );
+END; $$;
+
+REVOKE EXECUTE ON FUNCTION public.confirm_blockchain_anchor FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.confirm_blockchain_anchor TO authenticated, service_role;
+
+-- 4c. RECORD BLOCKCHAIN FAILURE PROCEDURE
+CREATE OR REPLACE FUNCTION public.record_blockchain_failure(
+  _project_id uuid,
+  _error_message text,
+  _verifier_id uuid
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_now timestamptz := now();
+BEGIN
+  IF NOT (
+    public.has_role(_verifier_id, 'verifier') OR
+    public.has_role(_verifier_id, 'admin') OR
+    public.is_service_role()
+  ) THEN
+    RAISE EXCEPTION 'Unauthorized: Caller is not an authorized verifier.';
+  END IF;
+
+  UPDATE public.blockchain_outbox
+  SET
+    attempts = attempts + 1,
+    last_error = _error_message,
+    updated_at = v_now
+  WHERE project_id = _project_id AND status = 'PENDING';
+
+  INSERT INTO public.audit_logs (
+    action,
+    project_id,
+    actor_id,
+    details,
+    created_at
+  ) VALUES (
+    'BLOCKCHAIN_ANCHOR_FAILED',
+    _project_id,
+    _verifier_id,
+    jsonb_build_object('error', _error_message),
+    v_now
+  );
+
+  RETURN jsonb_build_object('success', true);
+END; $$;
+
+REVOKE EXECUTE ON FUNCTION public.record_blockchain_failure FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_blockchain_failure TO authenticated, service_role;
 
 -- 5. HARDEN PROJECTS RLS: PREVENT MODIFICATION OF VERIFIED PROJECTS BY OWNERS
 -- Project owners may only update their projects while in 'DRAFT' or 'CORRECTION_REQUIRED' status.

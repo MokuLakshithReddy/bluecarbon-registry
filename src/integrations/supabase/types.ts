@@ -712,7 +712,13 @@ export type Database = {
       ecosystem_type: "MANGROVE" | "SEAGRASS" | "SALT_MARSH" | "COASTAL_WETLAND" | "OTHER";
       interest_status: "NEW" | "IN_DISCUSSION" | "CLOSED";
       project_status:
-        "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "CORRECTION_REQUIRED" | "VERIFIED" | "REJECTED";
+        | "DRAFT"
+        | "SUBMITTED"
+        | "UNDER_REVIEW"
+        | "CORRECTION_REQUIRED"
+        | "VERIFIED_PENDING_ANCHOR"
+        | "VERIFIED"
+        | "REJECTED";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -843,6 +849,7 @@ export const Constants = {
         "SUBMITTED",
         "UNDER_REVIEW",
         "CORRECTION_REQUIRED",
+        "VERIFIED_PENDING_ANCHOR",
         "VERIFIED",
         "REJECTED",
       ],

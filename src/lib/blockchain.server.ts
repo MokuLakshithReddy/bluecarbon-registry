@@ -31,11 +31,17 @@ export interface AnchorResult {
   tx_hash: string;
   block_number: number | null;
   network: string;
-  status: "CONFIRMED" | "PENDING" | "FAILED";
+  status: "CONFIRMED" | "PENDING" | "FAILED" | "SIMULATED";
   simulated: boolean;
   explorer_url: string | null;
   confirmations?: number;
   error?: string | null;
+}
+
+export interface ExpectedRecordPayload {
+  project_code?: string;
+  verified_tco2e?: number;
+  verifier_address?: string;
 }
 
 export interface OnChainVerificationReport {
@@ -100,7 +106,11 @@ export interface BlockchainProvider {
   readonly network: string;
   readonly simulated: boolean;
   anchor(recordHash: string, payload: AnchorPayload): Promise<Omit<AnchorResult, "record_hash">>;
-  verify(txHash: string, recordHash: string): Promise<OnChainVerificationReport>;
+  verify(
+    txHash: string,
+    recordHash: string,
+    expectedPayload?: ExpectedRecordPayload,
+  ): Promise<OnChainVerificationReport>;
 }
 
 // -----------------------------------------------------------------------------
@@ -110,7 +120,7 @@ export const simulatedProvider: BlockchainProvider = {
   network: "Simulated Testnet (Demo Only)",
   simulated: true,
 
-  async anchor(recordHash, payload) {
+  async anchor(recordHash, _payload) {
     const pseudoTx = await sha256Hex(`sim-tx:${recordHash}:${Date.now()}`);
     const pseudoBlock = 4_800_000 + (parseInt(recordHash.slice(0, 6), 16) % 500_000);
 
@@ -118,26 +128,27 @@ export const simulatedProvider: BlockchainProvider = {
       tx_hash: `0x${pseudoTx}`,
       block_number: pseudoBlock,
       network: this.network,
-      status: "CONFIRMED",
+      status: "SIMULATED",
       simulated: true,
-      explorer_url: `https://amoy.polygonscan.com/tx/0x${pseudoTx}`,
-      confirmations: 3,
+      explorer_url: null,
+      confirmations: 0,
     };
   },
 
   async verify(txHash, recordHash) {
     return {
-      isVerified: true,
+      isVerified: false,
       txHash,
       recordHash,
       blockNumber: 4_800_123,
-      confirmations: 12,
+      confirmations: 0,
       network: this.network,
       simulated: true,
-      receiptStatus: "SUCCESS",
+      receiptStatus: "NOT_FOUND",
       verifiedAt: new Date().toISOString(),
-      eventVerified: true,
-      contractVerified: true,
+      eventVerified: false,
+      contractVerified: false,
+      error: "Simulated demonstration anchor — not verified on public blockchain.",
     };
   },
 };
@@ -258,7 +269,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
       }
     },
 
-    async verify(txHash, recordHash) {
+    async verify(txHash, recordHash, expectedPayload) {
       try {
         const provider = getJsonRpcProvider(cfg);
         const receipt = await provider.getTransactionReceipt(txHash);
@@ -297,6 +308,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
         let eventFound = false;
         let eventProjectCode: string | null = null;
         let eventCarbonMilli: bigint | null = null;
+        let eventVerifier: string | null = null;
 
         for (const log of receipt.logs) {
           if (log.address.toLowerCase() === expectedContract) {
@@ -311,6 +323,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
                   eventFound = true;
                   eventProjectCode = String(parsed.args["projectCode"] ?? "");
                   eventCarbonMilli = BigInt(parsed.args["verifiedCarbonMilliTco2e"] ?? 0n);
+                  eventVerifier = String(parsed.args["verifier"] ?? "");
                   break;
                 }
               }
@@ -324,6 +337,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
         let existsInContract = false;
         let onChainProjectCode: string | null = null;
         let onChainCarbonMilli: bigint | null = null;
+        let onChainVerifier: string | null = null;
 
         try {
           const contract = new ethers.Contract(cfg.contract, BLUE_CARBON_REGISTRY_ABI, provider);
@@ -338,11 +352,52 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
               string,
             ];
             existsInContract = onChainRecord[0] === true;
-            onChainProjectCode = onChainRecord[1];
-            onChainCarbonMilli = onChainRecord[2];
+            onChainProjectCode = String(onChainRecord[1] ?? "");
+            onChainCarbonMilli = BigInt(onChainRecord[2] ?? 0n);
+            onChainVerifier = String(onChainRecord[5] ?? "");
           }
         } catch {
           existsInContract = false;
+        }
+
+        // 4. Comprehensive cross-comparison across event, contract storage, and expected payload
+        let fieldsMatch = true;
+        let fieldMismatchError: string | null = null;
+
+        if (eventFound && existsInContract) {
+          if (eventProjectCode !== onChainProjectCode) {
+            fieldsMatch = false;
+            fieldMismatchError = `Project code mismatch: receipt event contains '${eventProjectCode}' but contract storage contains '${onChainProjectCode}'.`;
+          } else if (eventCarbonMilli !== onChainCarbonMilli) {
+            fieldsMatch = false;
+            fieldMismatchError = `Carbon quantity mismatch: receipt event contains ${eventCarbonMilli} milli-tCO2e but contract storage contains ${onChainCarbonMilli} milli-tCO2e.`;
+          } else if (
+            eventVerifier &&
+            onChainVerifier &&
+            eventVerifier.toLowerCase() !== onChainVerifier.toLowerCase()
+          ) {
+            fieldsMatch = false;
+            fieldMismatchError = `Verifier address mismatch: receipt event contains '${eventVerifier}' but contract storage contains '${onChainVerifier}'.`;
+          } else if (
+            expectedPayload?.project_code &&
+            onChainProjectCode !== expectedPayload.project_code
+          ) {
+            fieldsMatch = false;
+            fieldMismatchError = `Expected project code '${expectedPayload.project_code}' does not match on-chain record '${onChainProjectCode}'.`;
+          } else if (
+            expectedPayload?.verified_tco2e != null &&
+            onChainCarbonMilli !== toMilliTco2e(expectedPayload.verified_tco2e)
+          ) {
+            fieldsMatch = false;
+            fieldMismatchError = `Expected carbon quantity ${expectedPayload.verified_tco2e} tCO2e does not match on-chain record (${fromMilliTco2e(onChainCarbonMilli ?? 0n)} tCO2e).`;
+          } else if (
+            expectedPayload?.verifier_address &&
+            onChainVerifier &&
+            onChainVerifier.toLowerCase() !== expectedPayload.verifier_address.toLowerCase()
+          ) {
+            fieldsMatch = false;
+            fieldMismatchError = `Expected verifier address '${expectedPayload.verifier_address}' does not match on-chain verifier '${onChainVerifier}'.`;
+          }
         }
 
         const allChecksPass =
@@ -350,6 +405,7 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
           contractAddressMatches &&
           eventFound &&
           existsInContract &&
+          fieldsMatch &&
           confirmations >= cfg.confirmationsRequired;
 
         const anchoredCarbonTco2e =
@@ -382,7 +438,11 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
                 ? "Transaction receipt did not emit the expected RecordAnchored event for this record hash."
                 : !existsInContract
                   ? "Record hash not found in registry contract state."
-                  : undefined,
+                  : !fieldsMatch
+                    ? fieldMismatchError
+                    : confirmations < cfg.confirmationsRequired
+                      ? `Insufficient confirmations: ${confirmations} of ${cfg.confirmationsRequired} required.`
+                      : undefined,
         };
       } catch (err) {
         return {
@@ -425,7 +485,8 @@ export async function anchorVerifiedRecord(payload: AnchorPayload): Promise<Anch
 export async function verifyOnChainAnchor(
   txHash: string,
   recordHash: string,
+  expectedPayload?: ExpectedRecordPayload,
 ): Promise<OnChainVerificationReport> {
   const provider = getBlockchainProvider();
-  return provider.verify(txHash, recordHash);
+  return provider.verify(txHash, recordHash, expectedPayload);
 }

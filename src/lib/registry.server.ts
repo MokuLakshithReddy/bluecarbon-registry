@@ -280,7 +280,7 @@ export async function startReview(input: DecisionInput) {
   return { status: "UNDER_REVIEW" as const };
 }
 
-/** Approves project verification. Enforces UNDER_REVIEW -> VERIFIED transition with full audit and blockchain anchoring. */
+/** Approves project verification. Enforces UNDER_REVIEW -> VERIFIED_PENDING_ANCHOR -> VERIFIED transition with full audit and blockchain anchoring. */
 export async function approveProject(input: DecisionInput) {
   await assertVerifier(input.supabase, input.userId);
   const project = await loadProject(input.supabase, input.projectId);
@@ -296,9 +296,35 @@ export async function approveProject(input: DecisionInput) {
     throw new Error("Invalid carbon value: Confirmed carbon impact must be a positive number.");
   }
 
+  // 1. Strict Evidence Validation: Check query error, require >= 1 file, enforce cryptographic SHA-256 hash
+  const { data: evidence, error: evidenceError } = await input.supabase
+    .from("evidence")
+    .select("id, file_name, file_hash")
+    .eq("project_id", project.id);
+
+  if (evidenceError) {
+    throw new Error(`Failed to retrieve project evidence records: ${evidenceError.message}`);
+  }
+
+  if (!evidence || evidence.length === 0) {
+    throw new Error(
+      `Verification approval rejected: Project ${project.project_code} has no uploaded evidence records. At least one verified evidence document is strictly required.`,
+    );
+  }
+
+  const sha256Regex = /^[a-fA-F0-9]{64}$/;
+  const invalidEvidence = evidence.filter((e) => !e.file_hash || !sha256Regex.test(e.file_hash));
+  if (invalidEvidence.length > 0) {
+    const invalidNames = invalidEvidence.map((e) => e.file_name || e.id).join(", ");
+    throw new Error(
+      `Verification approval rejected: Evidence records [${invalidNames}] lack valid SHA-256 cryptographic content hashes. Cryptographic proof of file contents is strictly required.`,
+    );
+  }
+
+  const evidenceHashes = evidence.map((e) => e.file_hash as string);
   const verifiedAt = new Date().toISOString();
 
-  // 1. Execute atomic database transaction
+  // 2. Execute atomic database transaction (Stage 1: UNDER_REVIEW -> VERIFIED_PENDING_ANCHOR)
   const supabaseWithRpc = input.supabase as unknown as {
     rpc: (
       fn: string,
@@ -326,13 +352,7 @@ export async function approveProject(input: DecisionInput) {
     );
   }
 
-  // 2. Fetch evidence hashes for blockchain anchor
-  const { data: evidence } = await input.supabase
-    .from("evidence")
-    .select("file_hash, file_name")
-    .eq("project_id", project.id);
-
-  // 3. Anchor verified record using scientifically validated methodology
+  // 3. Anchor verified record on blockchain
   const anchor = await anchorVerifiedRecord({
     project_code: project.project_code,
     project_name: project.name,
@@ -346,37 +366,153 @@ export async function approveProject(input: DecisionInput) {
     restoration_end: project.restoration_end,
     verified_tco2e: verifiedCarbon,
     methodology: CARBON_METHODOLOGY_ID,
-    evidence_count: evidence?.length ?? 0,
-    evidence_hashes: (evidence ?? []).map((e) => e.file_hash || e.file_name),
+    evidence_count: evidence.length,
+    evidence_hashes: evidenceHashes,
     verifier_id: input.userId,
     verified_at: verifiedAt,
   });
 
-  // 4. Record blockchain transaction state
-  const { error: blockError } = await input.supabase.from("blockchain_records").insert({
-    project_id: project.id,
-    record_hash: anchor.record_hash,
-    tx_hash: anchor.tx_hash,
-    block_number: anchor.block_number,
-    network: anchor.network,
-    status: anchor.status,
-    verifier_id: input.userId,
-    verified_tco2e: verifiedCarbon,
-    anchored_payload: {
-      project_code: project.project_code,
-      verified_tco2e: verifiedCarbon,
-      methodology: CARBON_METHODOLOGY_ID,
-      simulated: anchor.simulated,
-      explorer_url: anchor.explorer_url ?? null,
-      error: anchor.error ?? null,
-    },
-  });
+  // 4. Handle Blockchain Result & Transition State Durably
+  if (anchor.status === "CONFIRMED" || anchor.status === "SIMULATED") {
+    // Stage 2 completion: Promote project from VERIFIED_PENDING_ANCHOR to VERIFIED
+    const { error: confirmError } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
+      _project_id: project.id,
+      _record_hash: anchor.record_hash,
+      _tx_hash: anchor.tx_hash,
+      _block_number: anchor.block_number,
+      _network: anchor.network,
+      _status: anchor.status,
+      _verifier_id: input.userId,
+      _verified_tco2e: verifiedCarbon,
+      _anchored_payload: {
+        project_code: project.project_code,
+        verified_tco2e: verifiedCarbon,
+        methodology: CARBON_METHODOLOGY_ID,
+        simulated: anchor.simulated,
+        explorer_url: anchor.explorer_url ?? null,
+        error: anchor.error ?? null,
+      },
+    });
 
-  if (blockError) {
-    console.error("Failed to insert blockchain record:", blockError.message);
+    if (confirmError) {
+      // NEVER ignore database failure to record transaction state!
+      throw new Error(
+        `Critical database error: Failed to record confirmed blockchain anchor for ${project.project_code}: ${confirmError.message}. State remains VERIFIED_PENDING_ANCHOR for recovery.`,
+      );
+    }
+
+    return { status: "VERIFIED" as const, verifiedCarbon, anchor };
   }
 
-  return { status: "VERIFIED" as const, verifiedCarbon, anchor };
+  // Anchoring failed or is pending: Record failure in durable outbox, do NOT report as VERIFIED
+  const { error: failErr } = await supabaseWithRpc.rpc("record_blockchain_failure", {
+    _project_id: project.id,
+    _error_message: anchor.error || "Blockchain anchoring did not achieve on-chain confirmation.",
+    _verifier_id: input.userId,
+  });
+
+  if (failErr) {
+    throw new Error(
+      `Failed to record blockchain failure state for ${project.project_code}: ${failErr.message}`,
+    );
+  }
+
+  return {
+    status: "VERIFIED_PENDING_ANCHOR" as const,
+    verifiedCarbon,
+    anchor,
+    error: anchor.error || "Blockchain anchoring is pending or failed.",
+  };
+}
+
+/**
+ * Idempotently retries blockchain anchoring for a project in VERIFIED_PENDING_ANCHOR status.
+ * Used for recovery after crashes or temporary RPC outages between database commit and blockchain submission.
+ */
+export async function retryProjectAnchor(
+  supabase: VerifierClient,
+  projectId: string,
+  verifierId: string,
+) {
+  await assertVerifier(supabase, verifierId);
+  const project = await loadProject(supabase, projectId);
+
+  if (project.status !== "VERIFIED_PENDING_ANCHOR") {
+    throw new Error(
+      `Project ${project.project_code} is in status '${project.status}', expected 'VERIFIED_PENDING_ANCHOR'.`,
+    );
+  }
+
+  const { data: evidence, error: evidenceError } = await supabase
+    .from("evidence")
+    .select("file_hash")
+    .eq("project_id", project.id);
+
+  if (evidenceError || !evidence || evidence.length === 0) {
+    throw new Error(
+      `Cannot retry anchor: missing or unreadable evidence for ${project.project_code}`,
+    );
+  }
+
+  const evidenceHashes = evidence.map((e) => e.file_hash as string);
+  const verifiedCarbon = Number(project.verified_carbon || project.estimated_carbon || 0);
+
+  const anchor = await anchorVerifiedRecord({
+    project_code: project.project_code,
+    project_name: project.name,
+    ecosystem: project.ecosystem,
+    state: project.state,
+    district: project.district,
+    latitude: project.latitude,
+    longitude: project.longitude,
+    area_hectares: project.area_hectares == null ? null : Number(project.area_hectares),
+    restoration_start: project.restoration_start,
+    restoration_end: project.restoration_end,
+    verified_tco2e: verifiedCarbon,
+    methodology: CARBON_METHODOLOGY_ID,
+    evidence_count: evidence.length,
+    evidence_hashes: evidenceHashes,
+    verifier_id: verifierId,
+    verified_at: new Date().toISOString(),
+  });
+
+  const supabaseWithRpc = supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+
+  if (anchor.status === "CONFIRMED" || anchor.status === "SIMULATED") {
+    const { error: confirmError } = await supabaseWithRpc.rpc("confirm_blockchain_anchor", {
+      _project_id: project.id,
+      _record_hash: anchor.record_hash,
+      _tx_hash: anchor.tx_hash,
+      _block_number: anchor.block_number,
+      _network: anchor.network,
+      _status: anchor.status,
+      _verifier_id: verifierId,
+      _verified_tco2e: verifiedCarbon,
+      _anchored_payload: {
+        project_code: project.project_code,
+        verified_tco2e: verifiedCarbon,
+        methodology: CARBON_METHODOLOGY_ID,
+        simulated: anchor.simulated,
+        explorer_url: anchor.explorer_url ?? null,
+      },
+    });
+
+    if (confirmError) throw new Error(`Retry confirmation failed: ${confirmError.message}`);
+    return { status: "VERIFIED" as const, anchor };
+  }
+
+  await supabaseWithRpc.rpc("record_blockchain_failure", {
+    _project_id: project.id,
+    _error_message: anchor.error || "Retry failed to achieve confirmation.",
+    _verifier_id: verifierId,
+  });
+
+  return { status: "VERIFIED_PENDING_ANCHOR" as const, anchor, error: anchor.error };
 }
 
 /** Requests correction. Enforces UNDER_REVIEW -> CORRECTION_REQUIRED transition atomically with mandatory comments. */

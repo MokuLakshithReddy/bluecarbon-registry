@@ -64,11 +64,23 @@ export function BlockchainPanel({
           {isSimulated ? "Simulated Demo Record" : "Live On-Chain Anchor"}
         </span>
       </div>
+
+      {isSimulated ? (
+        <div className="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/10 px-5 py-3 text-xs text-amber-800 dark:text-amber-200">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p>
+            <strong>Simulated Demo Record:</strong> This record was generated in demo simulation
+            mode and is NOT anchored to a public blockchain network. Explorer verification is
+            disabled.
+          </p>
+        </div>
+      ) : null}
+
       <dl className="grid gap-x-6 gap-y-3 p-5 sm:grid-cols-2">
         <Row
           label="Verification Status"
-          value={record.status}
-          strong={record.status === "CONFIRMED"}
+          value={isSimulated ? "SIMULATED" : record.status}
+          strong={!isSimulated && record.status === "CONFIRMED"}
         />
         <Row label="Network" value={record.network} />
         <Row
@@ -209,7 +221,7 @@ export function VerifyChainButton({ record }: { record: BlockchainRecordView }) 
           {isSimulated ? "Inspect Simulation Proof" : "Verify On-Chain Finality"}
         </button>
 
-        {record.explorer_url ? (
+        {record.explorer_url && !isSimulated ? (
           <a
             href={record.explorer_url}
             target="_blank"
