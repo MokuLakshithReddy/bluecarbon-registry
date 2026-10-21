@@ -375,6 +375,7 @@ export async function approveProject(input: DecisionInput) {
     if (
       fileUrl.startsWith("http://") ||
       fileUrl.startsWith("https://") ||
+      fileUrl.startsWith("data:") ||
       (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(fileUrl) && !fileUrl.startsWith("storage://"))
     ) {
       throw new Error(
@@ -384,12 +385,41 @@ export async function approveProject(input: DecisionInput) {
 
     let storagePath: string | null = null;
     if (fileUrl.startsWith("storage://evidence/")) {
+      // Parse the canonical URI: storage://evidence/<projectId>/<filename>
       const match = fileUrl.match(EVIDENCE_STORAGE_REGEX);
       if (match && match[1] && match[2]) {
-        storagePath = `${match[1]}/${match[2]}`;
+        const embeddedProjectId = match[1];
+        // SECURITY: the embedded project ID MUST match the project being approved.
+        // A mismatch means the evidence record points at another project's storage
+        // object — hashing that object does not prove provenance for this project.
+        if (embeddedProjectId !== project.id) {
+          throw new Error(
+            `Verification approval rejected: Evidence record "${evidenceName}" references storage path ` +
+              `belonging to project "${embeddedProjectId}" but is attached to project "${project.id}". ` +
+              `Cross-project evidence references are not permitted.`,
+          );
+        }
+        storagePath = `${embeddedProjectId}/${match[2]}`;
       }
     } else if (!fileUrl.includes("://")) {
-      storagePath = fileUrl.includes("/") ? fileUrl : `${project.id}/${fileUrl}`;
+      // Relative path: must be either a bare filename (no slash) or start
+      // explicitly with the current project's ID as the first path segment.
+      if (fileUrl.includes("/")) {
+        const firstSegment = fileUrl.split("/")[0];
+        // SECURITY: reject relative paths whose first segment is not the
+        // current project ID — they would silently reference another project.
+        if (firstSegment !== project.id) {
+          throw new Error(
+            `Verification approval rejected: Evidence record "${evidenceName}" uses a relative storage path ` +
+              `("${fileUrl}") whose prefix "${firstSegment}" does not match the current project ID ` +
+              `"${project.id}". Cross-project evidence references are not permitted.`,
+          );
+        }
+        storagePath = fileUrl;
+      } else {
+        // Bare filename — safe to prefix with the current project ID.
+        storagePath = `${project.id}/${fileUrl}`;
+      }
     }
 
     if (!storagePath) {
