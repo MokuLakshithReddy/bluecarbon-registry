@@ -8,6 +8,10 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { anchorVerifiedRecord, type AnchorPayload } from "./blockchain.server.ts";
 import { CARBON_METHODOLOGY_ID } from "./domain.ts";
+import {
+  EVIDENCE_STORAGE_REGEX,
+  resolveEvidenceStoragePath,
+} from "./evidence-storage-path.ts";
 import { verifyEvidenceProvenance } from "./evidence-validator.ts";
 import type { PublicProjectPayload, PublicProjectSummary } from "./public-types.ts";
 
@@ -26,7 +30,6 @@ export function publicServerClient() {
 }
 
 const STORAGE_PREFIX = "storage://";
-const EVIDENCE_STORAGE_REGEX = /^storage:\/\/evidence\/([0-9a-fA-F-]{36})\/(.+)$/;
 
 async function getAdmin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -363,70 +366,16 @@ export async function approveProject(input: DecisionInput) {
   for (const item of evidence) {
     const evidenceName = item.file_name || item.id || "unnamed evidence";
 
-    if (!item.file_url || typeof item.file_url !== "string" || item.file_url.trim() === "") {
-      throw new Error(
-        `Verification approval rejected: Evidence record "${evidenceName}" is missing a valid file_url storage reference.`,
-      );
-    }
+    const fileUrl = item.file_url?.trim() ?? "";
 
-    const fileUrl = item.file_url.trim();
-
-    // Reject HTTP/HTTPS and arbitrary external URL schemes
-    if (
-      fileUrl.startsWith("http://") ||
-      fileUrl.startsWith("https://") ||
-      fileUrl.startsWith("data:") ||
-      (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(fileUrl) && !fileUrl.startsWith("storage://"))
-    ) {
-      throw new Error(
-        `Verification approval rejected: Evidence record "${evidenceName}" references an unsupported external URL format ("${fileUrl}"). Evidence must reside in approved object storage.`,
-      );
+    // Delegate to the shared, tested path resolver.
+    // All scheme checking, cross-project ownership binding, UUID validation,
+    // traversal rejection, and path normalization live in evidence-storage-path.ts.
+    const resolved = resolveEvidenceStoragePath(fileUrl, project.id, evidenceName);
+    if (resolved.error) {
+      throw new Error(`Verification approval rejected: ${resolved.error}`);
     }
-
-    let storagePath: string | null = null;
-    if (fileUrl.startsWith("storage://evidence/")) {
-      // Parse the canonical URI: storage://evidence/<projectId>/<filename>
-      const match = fileUrl.match(EVIDENCE_STORAGE_REGEX);
-      if (match && match[1] && match[2]) {
-        const embeddedProjectId = match[1];
-        // SECURITY: the embedded project ID MUST match the project being approved.
-        // A mismatch means the evidence record points at another project's storage
-        // object — hashing that object does not prove provenance for this project.
-        if (embeddedProjectId !== project.id) {
-          throw new Error(
-            `Verification approval rejected: Evidence record "${evidenceName}" references storage path ` +
-              `belonging to project "${embeddedProjectId}" but is attached to project "${project.id}". ` +
-              `Cross-project evidence references are not permitted.`,
-          );
-        }
-        storagePath = `${embeddedProjectId}/${match[2]}`;
-      }
-    } else if (!fileUrl.includes("://")) {
-      // Relative path: must be either a bare filename (no slash) or start
-      // explicitly with the current project's ID as the first path segment.
-      if (fileUrl.includes("/")) {
-        const firstSegment = fileUrl.split("/")[0];
-        // SECURITY: reject relative paths whose first segment is not the
-        // current project ID — they would silently reference another project.
-        if (firstSegment !== project.id) {
-          throw new Error(
-            `Verification approval rejected: Evidence record "${evidenceName}" uses a relative storage path ` +
-              `("${fileUrl}") whose prefix "${firstSegment}" does not match the current project ID ` +
-              `"${project.id}". Cross-project evidence references are not permitted.`,
-          );
-        }
-        storagePath = fileUrl;
-      } else {
-        // Bare filename — safe to prefix with the current project ID.
-        storagePath = `${project.id}/${fileUrl}`;
-      }
-    }
-
-    if (!storagePath) {
-      throw new Error(
-        `Verification approval rejected: Evidence record "${evidenceName}" does not resolve to a valid storage object path ("${fileUrl}").`,
-      );
-    }
+    const storagePath = resolved.storagePath!;
 
     const { data: fileBlob, error: downloadError } = await storageClient
       .from("evidence")
