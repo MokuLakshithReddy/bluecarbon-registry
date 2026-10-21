@@ -17,7 +17,7 @@ services:
       - WORKER_HEALTH_PORT=9090
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     deploy:
       resources:
         limits:

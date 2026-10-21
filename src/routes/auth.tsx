@@ -28,7 +28,11 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-const DEMO_PASSWORD = "bluecarbon123";
+// Security hardening: Demo credentials are strictly forbidden in production builds.
+// Demo mode is only accessible in local development when VITE_ALLOW_DEMO_LOGIN="true".
+const isDemoModeEnabled =
+  Boolean(import.meta.env.DEV) && import.meta.env["VITE_ALLOW_DEMO_LOGIN"] === "true";
+const DEMO_PASSWORD = isDemoModeEnabled ? (import.meta.env["VITE_DEMO_PASSWORD"] ?? "") : "";
 
 function AuthPage() {
   const navigate = useNavigate();
@@ -47,6 +51,10 @@ function AuthPage() {
   };
 
   const demoLogin = async (email: string) => {
+    if (!isDemoModeEnabled || !DEMO_PASSWORD) {
+      toast.error("Demo login is disabled in this environment.");
+      return;
+    }
     setBusy(email);
     try {
       await signIn(email, DEMO_PASSWORD);
@@ -103,43 +111,45 @@ function AuthPage() {
             submissions. Public verification needs no login.
           </p>
 
-          <div className="panel mt-6 space-y-3 p-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Demo accounts
-            </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button
-                variant="outline"
-                disabled={!!busy}
-                onClick={() => demoLogin("owner@bluecarbon.demo")}
-                className="justify-start"
-              >
-                {busy === "owner@bluecarbon.demo" ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Waves className="size-4" />
-                )}
-                Project Owner
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!!busy}
-                onClick={() => demoLogin("verifier@nccr.demo")}
-                className="justify-start"
-              >
-                {busy === "verifier@nccr.demo" ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ShieldCheck className="size-4" />
-                )}
-                NCCR Verifier
-              </Button>
+          {isDemoModeEnabled && (
+            <div className="panel mt-6 space-y-3 p-4">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Demo accounts
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button
+                  variant="outline"
+                  disabled={!!busy}
+                  onClick={() => demoLogin("owner@bluecarbon.demo")}
+                  className="justify-start"
+                >
+                  {busy === "owner@bluecarbon.demo" ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Waves className="size-4" />
+                  )}
+                  Project Owner
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!!busy}
+                  onClick={() => demoLogin("verifier@nccr.demo")}
+                  className="justify-start"
+                >
+                  {busy === "verifier@nccr.demo" ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="size-4" />
+                  )}
+                  NCCR Verifier
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                owner@bluecarbon.demo / verifier@nccr.demo · password{" "}
+                <span className="mono-hash">{DEMO_PASSWORD}</span>
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              owner@bluecarbon.demo / verifier@nccr.demo · password{" "}
-              <span className="mono-hash">{DEMO_PASSWORD}</span>
-            </p>
-          </div>
+          )}
 
           <Tabs defaultValue="signin" className="mt-6">
             <TabsList className="grid w-full grid-cols-2">

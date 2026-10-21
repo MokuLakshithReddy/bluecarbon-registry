@@ -58,16 +58,17 @@ Where:
 
 2. **$D_{\text{CH}_4}$ (Methane Emission Deduction)**:
    - For waters where salinity $\ge 18\text{ ppt}$, sulfate reduction suppresses methanogenesis ($D_{\text{CH}_4} = 0$).
-   - For waters where salinity $< 18\text{ ppt}$, apply IPCC default methane deduction:
-     $$D_{\text{CH}_4} = A \times T \times 1.937\text{ tCO}_2\text{e}/\text{ha}/\text{yr}$$
-     Based on emission factor $6.92\text{ g CH}_4/\text{m}^2/\text{yr}$ with GWP-100 of 28.
+   - For waters where salinity $< 18\text{ ppt}$, apply IPCC (2013) Wetlands Supplement Table 4.14 default methane deduction:
+     $$D_{\text{CH}_4} = A \times T \times 5.42\text{ tCO}_2\text{e}/\text{ha}/\text{yr}$$
+     Based on IPCC default emission factor $193.7\text{ kg CH}_4/\text{ha}/\text{yr}$ with GWP-100 of 28 ($193.7 \times 28 / 1000 \approx 5.42\text{ tCO}_2\text{e}/\text{ha}/\text{yr}$).
 
 3. **$B_{\text{reversal}}$ (Non-Permanence Risk Buffer)**:
-   - Mandatory deduction of **10.0%** allocated to an uncredited national reversal buffer pool (hedging against cyclones, sea-level rise, die-offs).
+   - Mandatory withholding of **15.0%** (Verra AFOLU Risk Tool guideline) allocated to an uncredited reversal risk buffer pool (hedging against cyclones, sea-level rise, die-offs).
 
 4. **$U_{\text{discount}}$ (Scientific Uncertainty Deduction)**:
    - **Tier 1 (Literature Default):** 10.0% deduction.
    - **Tier 2 (Ground-Truthed Site Sampling):** Reduced to 3.0% when site-specific soil core or allometric survey evidence is attached.
+   - **Tier 3 (Continuous Soil Cores & Allometry):** 3.0% deduction with empirical site calibration.
 
 ---
 

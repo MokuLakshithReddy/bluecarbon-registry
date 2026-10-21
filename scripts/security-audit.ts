@@ -23,12 +23,14 @@ const SECRET_REGEXES = [
   { name: "Raw Ethereum Private Key", regex: /0x[a-fA-F0-9]{64}/ },
   { name: "Live Supabase Service Secret", regex: /sb_secret_[a-zA-Z0-9_-]{20,}/ },
   { name: "Live Supabase Personal Access Token", regex: /sbp_[a-zA-Z0-9_-]{30,}/ },
-  { name: "Live GitHub Token", regex: /ghp_[a-zA-Z0-9]{36}/ },
+  { name: "Live GitHub Personal Token", regex: /ghp_[a-zA-Z0-9]{36}/ },
+  { name: "GitHub Fine-Grained Token", regex: /github_pat_[a-zA-Z0-9_]{60,}/ },
+  { name: "AWS Access Key", regex: /AKIA[0-9A-Z]{16}/ },
+  { name: "Private Key Block", regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
 ];
 
 const IGNORED_PATHS = [
   "node_modules",
-  ".git",
   ".output",
   "dist",
   ".wrangler",
@@ -47,7 +49,14 @@ function scanDirectory(dir: string): Finding[] {
     const fullPath = path.join(dir, entry.name);
     const relPath = path.relative(process.cwd(), fullPath).replace(/\\/g, "/");
 
-    if (IGNORED_PATHS.some((p) => relPath.startsWith(p))) continue;
+    // Exact match or folder boundary to avoid matching .github when ignoring .git
+    if (
+      relPath === ".git" ||
+      relPath.startsWith(".git/") ||
+      IGNORED_PATHS.some((p) => relPath === p || relPath.startsWith(`${p}/`))
+    ) {
+      continue;
+    }
 
     if (entry.isDirectory()) {
       findings.push(...scanDirectory(fullPath));
@@ -122,14 +131,21 @@ if (
   }
 
   console.log("\n=== Checking Dependencies Audit ===");
+  let auditPassed = true;
   try {
     execSync("npm audit --audit-level=high", { stdio: "inherit" });
     console.log("[PASS] No high or critical package vulnerabilities found.");
   } catch {
-    console.warn("[WARN] Some package vulnerabilities reported by npm audit.");
+    auditPassed = false;
+    console.warn(
+      "[WARN] Package vulnerabilities reported by npm audit (tracked for upstream TanStack Start patch release).",
+    );
   }
 
-  if (!clean || !gitignoreValid) {
+  const strictAudit = process.env["STRICT_AUDIT"] === "true";
+  if (!clean || !gitignoreValid || (strictAudit && !auditPassed)) {
+    console.error("[FAIL] Security audit failed blocking release criteria.");
     process.exit(1);
   }
+  console.log("[PASS] Security audit completed successfully.");
 }

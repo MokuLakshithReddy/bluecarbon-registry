@@ -247,6 +247,59 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
           };
         }
 
+        // Verify receipt logs contain the expected RecordAnchored event
+        const contractInterface = new ethers.Interface(BLUE_CARBON_REGISTRY_ABI);
+        let eventFound = false;
+        let eventProjectCode: string | null = null;
+        let eventCarbonMilli: bigint | null = null;
+
+        for (const log of receipt.logs) {
+          if (log.address.toLowerCase() === cfg.contract.toLowerCase()) {
+            try {
+              const parsed = contractInterface.parseLog({
+                topics: log.topics as string[],
+                data: log.data,
+              });
+              if (parsed && parsed.name === "RecordAnchored") {
+                const eventHash = String(parsed.args["recordHash"] ?? "").toLowerCase();
+                if (eventHash === bytes32Hash.toLowerCase()) {
+                  eventFound = true;
+                  eventProjectCode = String(parsed.args["projectCode"] ?? "");
+                  eventCarbonMilli = BigInt(parsed.args["verifiedCarbonMilliTco2e"] ?? 0n);
+                  break;
+                }
+              }
+            } catch {
+              // Non-matching log
+            }
+          }
+        }
+
+        if (!eventFound) {
+          return {
+            tx_hash: txHash,
+            block_number: receipt.blockNumber,
+            network: cfg.network,
+            status: "FAILED",
+            simulated: false,
+            explorer_url: explorerUrl,
+            error:
+              "On-chain transaction confirmed but RecordAnchored event was not emitted for this record.",
+          };
+        }
+
+        if (eventProjectCode !== payload.project_code || eventCarbonMilli !== milliTco2e) {
+          return {
+            tx_hash: txHash,
+            block_number: receipt.blockNumber,
+            network: cfg.network,
+            status: "FAILED",
+            simulated: false,
+            explorer_url: explorerUrl,
+            error: `RecordAnchored event values mismatch (expected project ${payload.project_code}, got ${eventProjectCode}).`,
+          };
+        }
+
         return {
           tx_hash: txHash,
           block_number: receipt.blockNumber,
@@ -260,21 +313,68 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
         const anyErr = err as {
           code?: string;
           replacement?: { hash?: string };
-          receipt?: { blockNumber?: number; status?: number; hash?: string };
+          receipt?: {
+            blockNumber?: number;
+            status?: number;
+            hash?: string;
+            logs?: Array<{ address: string; topics: string[]; data: string }>;
+          };
           message?: string;
         };
 
         // Handle transaction replacement (repriced, sped up, cancelled/replaced)
         if (anyErr?.code === "TRANSACTION_REPLACED" && anyErr.receipt?.status === 1) {
           const repHash = anyErr.replacement?.hash || anyErr.receipt.hash || "";
+          const repReceipt = anyErr.receipt;
+          let repEventFound = false;
+
+          if (repReceipt.logs && Array.isArray(repReceipt.logs)) {
+            const iface = new ethers.Interface(BLUE_CARBON_REGISTRY_ABI);
+            const targetHash = (
+              recordHash.startsWith("0x") ? recordHash : `0x${recordHash}`
+            ).toLowerCase();
+            for (const log of repReceipt.logs) {
+              if (log.address?.toLowerCase() === cfg.contract.toLowerCase()) {
+                try {
+                  const parsed = iface.parseLog({
+                    topics: log.topics,
+                    data: log.data,
+                  });
+                  if (
+                    parsed?.name === "RecordAnchored" &&
+                    String(parsed.args["recordHash"] ?? "").toLowerCase() === targetHash
+                  ) {
+                    repEventFound = true;
+                    break;
+                  }
+                } catch {
+                  // Not our event
+                }
+              }
+            }
+          }
+
+          if (repEventFound) {
+            return {
+              tx_hash: repHash,
+              block_number: anyErr.receipt.blockNumber ?? null,
+              network: cfg.network,
+              status: "CONFIRMED",
+              simulated: false,
+              explorer_url: cfg.explorerUrl && repHash ? `${cfg.explorerUrl}/tx/${repHash}` : null,
+              confirmations: cfg.confirmationsRequired,
+            };
+          }
+
           return {
             tx_hash: repHash,
             block_number: anyErr.receipt.blockNumber ?? null,
             network: cfg.network,
-            status: "CONFIRMED",
+            status: "FAILED",
             simulated: false,
-            explorer_url: cfg.explorerUrl && repHash ? `${cfg.explorerUrl}/tx/${repHash}` : null,
-            confirmations: cfg.confirmationsRequired,
+            explorer_url: null,
+            error:
+              "Transaction was replaced by another transaction that did not anchor this record.",
           };
         }
 
@@ -290,15 +390,36 @@ export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
             if (verifyFn) {
               const onChain = await verifyFn(bytes32);
               if (onChain && onChain[0] === true) {
-                const blockNumber = Number(onChain[3]);
+                // Query the real transaction hash from on-chain RecordAnchored event logs
+                const filterFn = contract.filters["RecordAnchored"];
+                if (filterFn) {
+                  const filter = filterFn(bytes32);
+                  const events = await contract.queryFilter(filter);
+                  if (events.length > 0 && events[0] && "transactionHash" in events[0]) {
+                    const ev = events[0] as ethers.EventLog;
+                    const realTxHash = ev.transactionHash;
+                    const blockNumber = ev.blockNumber;
+                    return {
+                      tx_hash: realTxHash,
+                      block_number: blockNumber,
+                      network: cfg.network,
+                      status: "CONFIRMED",
+                      simulated: false,
+                      explorer_url: cfg.explorerUrl ? `${cfg.explorerUrl}/tx/${realTxHash}` : null,
+                      confirmations: cfg.confirmationsRequired,
+                    };
+                  }
+                }
+
                 return {
-                  tx_hash: `on-chain-block-${blockNumber}`,
-                  block_number: blockNumber,
+                  tx_hash: "",
+                  block_number: Number(onChain[3]),
                   network: cfg.network,
-                  status: "CONFIRMED",
+                  status: "FAILED",
                   simulated: false,
-                  explorer_url: cfg.explorerUrl ? `${cfg.explorerUrl}/address/${cfg.contract}` : null,
-                  confirmations: cfg.confirmationsRequired,
+                  explorer_url: null,
+                  error:
+                    "Record already anchored on-chain but transaction hash could not be retrieved from event logs.",
                 };
               }
             }

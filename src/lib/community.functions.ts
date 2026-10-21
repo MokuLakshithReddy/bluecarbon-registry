@@ -10,4 +10,4 @@ export const getCommunityFeed = createServerFn({ method: "GET" }).handler(async 
 export const getSignedCommunityUrls = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ urls: z.array(z.string()).max(80) }).parse(data))
-  .handler(async ({ data }) => signCommunityUrls(data.urls));
+  .handler(async ({ data, context }) => signCommunityUrls(data.urls, context.userId));

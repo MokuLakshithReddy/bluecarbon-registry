@@ -42,10 +42,10 @@ export async function fetchPublicProject(code: string): Promise<PublicProjectPay
 
   const payload = data as unknown as PublicProjectPayload;
 
-  // Filter out any evidence items not marked as public
+  // Filter out any evidence items not explicitly marked as public (fail-closed)
   if (payload.evidence && Array.isArray(payload.evidence)) {
     payload.evidence = payload.evidence.filter(
-      (e) => (e as { is_public?: boolean }).is_public !== false,
+      (e) => (e as { is_public?: boolean }).is_public === true,
     );
   }
 

@@ -173,7 +173,7 @@ export interface DetailedCarbonAssessment {
   ghgEmissionsDeductionTco2e: number;
   leakageDeductionTco2e: number;
   riskBufferDeductionTco2e: number; // 15% non-permanence risk buffer withholding (Verra AFOLU Risk Tool)
-  uncertaintyDiscountTco2e: number; // 10% (Tier 1) or 3% (Tier 2)
+  uncertaintyDiscountTco2e: number; // 10% (Tier 1) or 3% (Tier 2/3)
 
   // Net Model Estimates (Unaccredited)
   netEstimatedTco2e: number;
@@ -181,6 +181,7 @@ export interface DetailedCarbonAssessment {
 
   citation: string;
   unaccreditedDisclaimer: string;
+  defaultInputsApplied: string[];
 }
 
 /**
@@ -192,17 +193,32 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
   const params =
     SCIENTIFIC_CARBON_COEFFICIENTS[input.ecosystem] ?? SCIENTIFIC_CARBON_COEFFICIENTS.OTHER;
 
-  // Duration calculation
+  const defaultInputsApplied: string[] = [];
+
+  // Duration calculation with strict fail-closed validation
   let durationYears = 1.0;
   if (input.restorationStartDate && input.restorationEndDate) {
     const start = new Date(input.restorationStartDate).getTime();
     const end = new Date(input.restorationEndDate).getTime();
-    if (end > start) {
-      durationYears = Math.max(0.1, (end - start) / (1000 * 60 * 60 * 24 * 365.25));
+    if (Number.isNaN(start) || Number.isNaN(end)) {
+      throw new Error(
+        `Invalid restoration date format: start='${input.restorationStartDate}', end='${input.restorationEndDate}'`,
+      );
     }
+    if (end <= start) {
+      throw new Error(
+        `Invalid restoration date range: end date (${input.restorationEndDate}) must be strictly after start date (${input.restorationStartDate}).`,
+      );
+    }
+    durationYears = Math.max(0.1, (end - start) / (1000 * 60 * 60 * 24 * 365.25));
+  } else {
+    defaultInputsApplied.push("restoration_duration_default_1_year");
   }
 
   // Survival rate scaling
+  if (input.survivalRate == null) {
+    defaultInputsApplied.push("survival_rate_conservative_default_80%");
+  }
   const survival = Math.min(100, Math.max(0, Number(input.survivalRate ?? 80)));
   const survivalFactor = survival / 100;
 
@@ -215,13 +231,16 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
   const grossSequestration = biomassTco2e + soilTco2e;
 
   // 3. GHG Deductions: IPCC 2013 Wetlands Supplement Table 4.14.
-  // In saline coastal water (> 18 ppt), sulfate reduction suppresses methanogenesis.
-  // In brackish/fresh conditions (< 18 ppt), IPCC requires methane emission deduction:
-  // 193.7 kg CH4 / ha / yr * 28 GWP = ~5.42 tCO2e / ha / yr.
-  const salinity = input.salinityPpt ?? 25; // default to coastal marine salinity (> 18 ppt)
+  // In saline coastal water (>= 18 ppt), sulfate reduction suppresses methanogenesis (emission = 0).
+  // In brackish/fresh conditions (< 18 ppt), IPCC Table 4.14 specifies default methane emission:
+  // 193.7 kg CH4 / ha / yr * 28 GWP-100 = 5.42 tCO2e / ha / yr deduction.
+  if (input.salinityPpt == null) {
+    defaultInputsApplied.push("salinity_coastal_marine_default_25_ppt");
+  }
+  const salinity = input.salinityPpt ?? 25;
   let ghgEmissions = 0;
   if (salinity < 18) {
-    ghgEmissions = area * 5.42 * durationYears * 0.5;
+    ghgEmissions = area * 5.42 * durationYears;
   }
 
   // 4. Leakage Deduction: Activity displacement (Verra VM0033 Section 8.3 default 0% unless displaced)
@@ -234,7 +253,7 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
     (grossSequestration - ghgEmissions - leakageTco2e) * nonPermanenceBufferRate;
 
   // 6. Scientific Uncertainty Discount Factor
-  // Tier 1 defaults carry a 10% conservative discount; Tier 2 site samples carry 3%.
+  // Tier 1 defaults carry a 10% conservative discount; Tier 2 site samples carry 3%; Tier 3 soil cores carry 3%.
   const tier = input.tier ?? "TIER_1_DEFAULTS";
   const uncertaintyRate =
     tier === "TIER_2_SITE_CALIBRATED" || tier === "TIER_3_SOIL_CORES" ? 0.03 : 0.1;
@@ -251,9 +270,11 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
     methodologyId: METHODOLOGY_SPEC.id,
     methodologyTitle: METHODOLOGY_SPEC.title,
     tier:
-      tier === "TIER_2_SITE_CALIBRATED"
-        ? "Tier 2 (Site-Calibrated)"
-        : "Tier 1 (IPCC Default Factors)",
+      tier === "TIER_3_SOIL_CORES"
+        ? "Tier 3 (Site-Specific Soil Cores & Allometry)"
+        : tier === "TIER_2_SITE_CALIBRATED"
+          ? "Tier 2 (Site-Calibrated)"
+          : "Tier 1 (IPCC Default Factors)",
     units: METHODOLOGY_SPEC.standardUnits,
     durationYears: Number(durationYears.toFixed(2)),
     effectiveAreaHectares: Number(area.toFixed(2)),
@@ -273,5 +294,6 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
 
     citation: params.sourceCitation,
     unaccreditedDisclaimer: METHODOLOGY_SPEC.disclaimer,
+    defaultInputsApplied,
   };
 }

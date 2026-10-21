@@ -19,6 +19,7 @@ import {
   type Ecosystem,
   type ProjectStatus,
 } from "@/lib/domain";
+import type { PublicTimelineEvent } from "@/lib/public-types";
 
 export const Route = createFileRoute("/verify/$code")({
   head: ({ params }) => ({
@@ -193,7 +194,7 @@ function PublicVerifyPage() {
             ) : null}
 
             <TimelinePanel
-              events={timeline.map((event) => ({
+              events={timeline.map((event: PublicTimelineEvent) => ({
                 label: event.label,
                 detail: event.detail,
                 created_at: event.created_at,

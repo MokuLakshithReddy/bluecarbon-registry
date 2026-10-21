@@ -52,19 +52,25 @@ export function createHealthServer(
     }
 
     if (url === "/readyz") {
-      // Readiness probe: checks database connectivity
+      // Readiness probe: checks database connectivity without leaking internal errors
       try {
         const { error } = await supabase.from("projects").select("id").limit(1);
         if (error) {
+          workerLogger.error("[OutboxWorker] Readiness database probe failed", {
+            error: error.message,
+          });
           res.writeHead(503, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ status: "DATABASE_UNAVAILABLE", error: error.message }));
+          res.end(JSON.stringify({ status: "UNHEALTHY" }));
         } else {
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ status: "READY", database: "HEALTHY" }));
+          res.end(JSON.stringify({ status: "READY" }));
         }
       } catch (err) {
+        workerLogger.error("[OutboxWorker] Readiness check exception", {
+          error: String(err),
+        });
         res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ERROR", error: String(err) }));
+        res.end(JSON.stringify({ status: "UNHEALTHY" }));
       }
       return;
     }
@@ -81,8 +87,16 @@ export function createHealthServer(
     res.end("Not Found");
   });
 
-  server.listen(port, "0.0.0.0", () => {
-    workerLogger.info(`[OutboxWorker] Health server listening on http://0.0.0.0:${port}`);
+  server.requestTimeout = 5000;
+  server.headersTimeout = 6000;
+
+  server.on("error", (err) => {
+    workerLogger.error("[OutboxWorker] Health server error", { error: String(err) });
+  });
+
+  const host = process.env["WORKER_HEALTH_HOST"] ?? "0.0.0.0";
+  server.listen(port, host, () => {
+    workerLogger.info(`[OutboxWorker] Health server listening on http://${host}:${port}`);
   });
 
   return server;

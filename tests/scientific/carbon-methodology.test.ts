@@ -124,3 +124,47 @@ test("Carbon Methodology: Reference benchmarks (Sundarbans, Pichavaram, Chilika)
     );
   }
 });
+
+test("Carbon Methodology: Tier 3 produces accurate human-readable label and discount", () => {
+  const result = calculateScientificCarbon({
+    ecosystem: "MANGROVE",
+    areaHectares: 15,
+    tier: "TIER_3_SOIL_CORES",
+  });
+  assert.strictEqual(result.tier, "Tier 3 (Site-Specific Soil Cores & Allometry)");
+  assert.ok(result.uncertaintyDiscountTco2e > 0);
+});
+
+test("Carbon Methodology: Reversed or invalid dates throw descriptive validation errors", () => {
+  assert.throws(
+    () =>
+      calculateScientificCarbon({
+        ecosystem: "MANGROVE",
+        areaHectares: 10,
+        restorationStartDate: "2026-01-01",
+        restorationEndDate: "2024-01-01", // Reversed
+      }),
+    /strictly after start date/,
+  );
+
+  assert.throws(
+    () =>
+      calculateScientificCarbon({
+        ecosystem: "MANGROVE",
+        areaHectares: 10,
+        restorationStartDate: "invalid-date",
+        restorationEndDate: "2024-01-01",
+      }),
+    /Invalid restoration date format/,
+  );
+});
+
+test("Carbon Methodology: Tracks provenance of defaulted inputs", () => {
+  const result = calculateScientificCarbon({
+    ecosystem: "MANGROVE",
+    areaHectares: 10,
+  });
+  assert.ok(result.defaultInputsApplied.includes("restoration_duration_default_1_year"));
+  assert.ok(result.defaultInputsApplied.includes("survival_rate_conservative_default_80%"));
+  assert.ok(result.defaultInputsApplied.includes("salinity_coastal_marine_default_25_ppt"));
+});
