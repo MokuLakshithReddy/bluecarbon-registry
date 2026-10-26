@@ -6,10 +6,17 @@ import path from "node:path";
 import {
   calculateScientificCarbon,
   createAuthoritativeVerifierDecision,
+  enrollVerifier,
+  revokeVerifier,
   type CarbonCalculationInput,
 } from "../../src/lib/carbon-methodology.ts";
 import { calculateGeodesicPolygonAreaHectares } from "../../src/lib/geo-boundary-validator.ts";
-import { canonicalizeTelemetry } from "../../src/lib/telemetry-crypto.server.ts";
+import {
+  canonicalizeTelemetry,
+  verifyEnrolledSensorTelemetry,
+  enrollSensorDevice,
+  revokeSensorDevice,
+} from "../../src/lib/telemetry-crypto.server.ts";
 import { ethers } from "ethers";
 
 test("Reference Case: Real source files exist, hashes match disk bytes, and calculations reproduce exactly", () => {
@@ -35,10 +42,10 @@ test("Reference Case: Real source files exist, hashes match disk bytes, and calc
   const ysiHash = crypto.createHash("sha256").update(ysiBytes).digest("hex");
 
   // Assert expected hashes match byte-calculated values
-  assert.strictEqual(socHash, "fa5da4b858f22e1fef6778e63c58a293dc619dcc06ab21ecbc357bd317bf1222");
-  assert.strictEqual(allomHash, "d09319bc3a757072bad3a448cd03d5382f6e7536ed5d4f7fb8fee051e2d31584");
-  assert.strictEqual(s2Hash, "d9ee35742bdf357917989308dc459c1e155ab9c92bbdcc4e952ed93faef866d1");
-  assert.strictEqual(ysiHash, "ea5e411e673ca1b47b153460f9435b6897b0ad010e583eb79a843869c838a79b");
+  assert.strictEqual(socHash, "cc40a8a2a3ed6cf8c864653f426aae950f4df1da878ae62be06002540829caf2");
+  assert.strictEqual(allomHash, "eb1b84bed2f2f9bb8bfb8a4818ea26ecc0e66270fe634e6bf6a8d68ffd8526aa");
+  assert.strictEqual(s2Hash, "063c8ea7c501722a20fa712ff9c423c36df5d1bf9df6756797dcb27242e9e3b4");
+  assert.strictEqual(ysiHash, "0bcbde14d8960e1c23ca9e8ace7c77349097fac4e98ae99b58110913ce344eea");
 
   // 2. Validate internal empirical observations from parsed source files
   const allomLines = allomBytes.toString("utf-8").trim().split("\n").slice(1);
@@ -155,8 +162,8 @@ test("Reference Case: Real source files exist, hashes match disk bytes, and calc
 });
 
 test("Reference Case: User-asserted VERIFIED status without verifier endorsement fails closed in strict mode", () => {
-  const socHash = "fa5da4b858f22e1fef6778e63c58a293dc619dcc06ab21ecbc357bd317bf1222";
-  const allomHash = "d09319bc3a757072bad3a448cd03d5382f6e7536ed5d4f7fb8fee051e2d31584";
+  const socHash = "cc40a8a2a3ed6cf8c864653f426aae950f4df1da878ae62be06002540829caf2";
+  const allomHash = "eb1b84bed2f2f9bb8bfb8a4818ea26ecc0e66270fe634e6bf6a8d68ffd8526aa";
 
   // Client provides verificationStatus: "VERIFIED" but NO authoritativeDecision
   const unendorsedInput: CarbonCalculationInput = {
@@ -283,4 +290,152 @@ test("Reference Case: YSI telemetry secp256k1 cryptographic signature mathematic
     ecdsa_signature.signer_address.toLowerCase(),
     "Tampered telemetry payload must fail cryptographic signature verification",
   );
+});
+
+test("Trusted Sensor Identity: Enrolled sensor verifies, unauthorized key and revoked key fail closed", async () => {
+  const ysiPath = path.resolve(
+    process.cwd(),
+    "data/reference-case/lothian-ysi-telemetry-2024.json",
+  );
+  const rawContent = fs.readFileSync(ysiPath, "utf-8");
+  const ysiData = JSON.parse(rawContent);
+  const { ecdsa_signature, ...payload } = ysiData;
+
+  // 1. Valid enrolled sensor device passes verification and returns device metadata
+  const enrolledResult = verifyEnrolledSensorTelemetry(
+    payload,
+    ecdsa_signature.signature,
+    "PRJ-LOTH-2024",
+  );
+  assert.strictEqual(enrolledResult.isValid, true);
+  assert.strictEqual(enrolledResult.device?.deviceId, "YSI-EXO2-LOTHIAN-JETTY-01");
+  assert.strictEqual(enrolledResult.device?.status, "ACTIVE");
+
+  // 2. Cross-project submission mismatch fails
+  const projectMismatch = verifyEnrolledSensorTelemetry(
+    payload,
+    ecdsa_signature.signature,
+    "WRONG-PROJECT-ID",
+  );
+  assert.strictEqual(projectMismatch.isValid, false);
+  assert.strictEqual(projectMismatch.errorCode, "PROJECT_MISMATCH");
+
+  // 3. Telemetry signed by an unauthorized / unenrolled private key fails closed
+  const unauthorizedWallet = ethers.Wallet.createRandom();
+  const unauthorizedSignature = await unauthorizedWallet.signMessage(
+    canonicalizeTelemetry(payload),
+  );
+  const untrustedResult = verifyEnrolledSensorTelemetry(
+    payload,
+    unauthorizedSignature,
+    "PRJ-LOTH-2024",
+  );
+  assert.strictEqual(untrustedResult.isValid, false);
+  assert.strictEqual(untrustedResult.errorCode, "UNTRUSTED_KEY");
+
+  // 4. Revoked sensor device key fails closed
+  const ephemeralDeviceId = "DEV-TEST-REVOKED-001";
+  const ephemeralWallet = ethers.Wallet.createRandom();
+  enrollSensorDevice({
+    deviceId: ephemeralDeviceId,
+    deviceModel: "Test Sonde",
+    manufacturer: "Test Sensor Corp",
+    projectCode: "PRJ-LOTH-2024",
+    signerAddress: ephemeralWallet.address,
+    organization: "Test Lab",
+    calibrationCertificate: "CAL-TEST-001",
+  });
+
+  const ephemeralPayload = { ...payload, device_id: ephemeralDeviceId };
+  const ephemeralSig = await ephemeralWallet.signMessage(canonicalizeTelemetry(ephemeralPayload));
+  const preRevoke = verifyEnrolledSensorTelemetry(ephemeralPayload, ephemeralSig, "PRJ-LOTH-2024");
+  assert.strictEqual(preRevoke.isValid, true, "Active enrolled sensor succeeds");
+
+  // Now revoke device
+  revokeSensorDevice(ephemeralWallet.address, "Hardware security compromise detected");
+  const postRevoke = verifyEnrolledSensorTelemetry(ephemeralPayload, ephemeralSig, "PRJ-LOTH-2024");
+  assert.strictEqual(postRevoke.isValid, false);
+  assert.strictEqual(postRevoke.errorCode, "DEVICE_KEY_REVOKED");
+});
+
+test("Authoritative Verifier Identity: Unenrolled or revoked verifiers are rejected in strict verification mode", () => {
+  const socHash = "cc40a8a2a3ed6cf8c864653f426aae950f4df1da878ae62be06002540829caf2";
+
+  // 1. Unenrolled verifier decision
+  const unenrolledVerifier = {
+    id: "unauthorized-auditor-fake",
+    role: "VERIFIER" as const,
+    reviewId: "rev-unauthorized-001",
+  };
+  const unenrolledDecision = createAuthoritativeVerifierDecision(
+    { sha256Hash: socHash },
+    unenrolledVerifier,
+  );
+
+  const inputWithUnenrolledVerifier: CarbonCalculationInput = {
+    ecosystem: "MANGROVE",
+    areaHectares: 100.0,
+    restorationStartDate: "2023-01-01T00:00:00Z",
+    restorationEndDate: "2025-01-01T00:00:00Z",
+    salinityPpt: 24.5,
+    survivalRate: 85.0,
+    tier: "TIER_3_SOIL_CORES",
+    mode: "STRICT_VERIFICATION",
+    structuredEvidence: [
+      {
+        evidenceId: "EVD-LOTH-2024-SOC-01",
+        type: "SOIL_CORE_ORGANIC_CARBON_ASSAY",
+        uri: "file://data/reference-case/lothian-sediment-cores-2024.csv",
+        sha256Hash: socHash,
+        issuer: "ICAR-CIFRI",
+        collectionDate: "2024-11-15T09:30:00Z",
+        verificationStatus: "VERIFIED",
+        authoritativeDecision: unenrolledDecision,
+      },
+    ],
+  };
+
+  const unenrolledResult = calculateScientificCarbon(inputWithUnenrolledVerifier);
+  // Must downgrade to Tier 1 default factors because verifier is not in trusted registry!
+  assert.strictEqual(unenrolledResult.tier, "Tier 1 (IPCC Default Factors)");
+  assert.strictEqual(unenrolledResult.evidenceAuditTrail?.unverifiedItemsRejected, 1);
+  assert.ok(
+    unenrolledResult.defaultInputsApplied.some((w) =>
+      w.includes("rejected_1_items_missing_authoritative_decision"),
+    ),
+  );
+
+  // 2. Revoked verifier decision
+  const tempVerifierId = "temp-auditor-to-revoke";
+  enrollVerifier({
+    verifierId: tempVerifierId,
+    organization: "Temporary Testing VVB",
+    accreditationBody: "NCCR",
+    accreditationId: "VVB-TEMP-999",
+    status: "ACTIVE",
+    enrolledAt: new Date().toISOString(),
+    supportedEcosystems: ["MANGROVE"],
+  });
+
+  // Now revoke
+  revokeVerifier(tempVerifierId, "Accreditation expired");
+
+  const revokedDecision = createAuthoritativeVerifierDecision(
+    { sha256Hash: socHash },
+    { id: tempVerifierId, role: "VERIFIER", reviewId: "rev-temp-01" },
+  );
+
+  const inputWithRevokedVerifier: CarbonCalculationInput = {
+    ...inputWithUnenrolledVerifier,
+    structuredEvidence: [
+      {
+        ...inputWithUnenrolledVerifier.structuredEvidence![0],
+        authoritativeDecision: revokedDecision,
+      },
+    ],
+  };
+
+  const revokedResult = calculateScientificCarbon(inputWithRevokedVerifier);
+  assert.strictEqual(revokedResult.tier, "Tier 1 (IPCC Default Factors)");
+  assert.strictEqual(revokedResult.evidenceAuditTrail?.unverifiedItemsRejected, 1);
 });

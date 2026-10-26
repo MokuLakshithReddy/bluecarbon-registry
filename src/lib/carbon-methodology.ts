@@ -365,7 +365,8 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
     }
 
     // In STRICT_VERIFICATION mode, self-asserted "VERIFIED" is strictly rejected
-    // unless accompanied by an authentic verifier decision bound to the exact content hash.
+    // unless accompanied by an authentic verifier decision bound to the exact content hash
+    // and signed by an active, enrolled, non-revoked verifier authorized for this biome.
     if (isStrict) {
       if (!item.authoritativeDecision) {
         unverifiedItemsRejected++;
@@ -373,6 +374,15 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
       }
       if (item.authoritativeDecision.contentHash !== item.sha256Hash) {
         unverifiedItemsRejected++;
+        return false;
+      }
+      const verifierCheck = verifyAuthoritativeReviewerDecision(
+        item.authoritativeDecision,
+        input.ecosystem,
+      );
+      if (!verifierCheck.isValid) {
+        unverifiedItemsRejected++;
+        defaultInputsApplied.push(`rejected_item_${item.evidenceId}_${verifierCheck.errorCode}`);
         return false;
       }
       authoritativeDecisionsBound++;
@@ -510,4 +520,156 @@ export function createAuthoritativeVerifierDecision(
     decisionTimestamp: new Date().toISOString(),
     contentHash: evidence.sha256Hash,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Trusted Verifier Enrollment & Authorization Registry
+// ---------------------------------------------------------------------------
+
+export type VerifierStatus = "ACTIVE" | "REVOKED" | "SUSPENDED";
+
+export interface EnrolledVerifier {
+  verifierId: string;
+  organization: string;
+  accreditationNumber: string;
+  authorizedBiomes: Ecosystem[];
+  status: VerifierStatus;
+  enrolledAt: string;
+  revokedAt?: string | undefined;
+  revocationReason?: string | undefined;
+}
+
+const ENROLLED_VERIFIER_REGISTRY = new Map<string, EnrolledVerifier>();
+
+function initializeDefaultVerifiers() {
+  const drDas: EnrolledVerifier = {
+    verifierId: "nccr-auditor-dr-das",
+    organization: "National Centre for Coastal Research (NCCR) Estuarine Division",
+    accreditationNumber: "VVB-NCCR-IND-2024-001",
+    authorizedBiomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH", "COASTAL_WETLAND"],
+    status: "ACTIVE",
+    enrolledAt: "2024-01-01T00:00:00Z",
+  };
+  const evmVerifier: EnrolledVerifier = {
+    verifierId: "0x2222222222222222222222222222222222222222".toLowerCase(),
+    organization: "Accredited Blue Carbon Validation Body (VVB-001)",
+    accreditationNumber: "VVB-ISO-14064-2024",
+    authorizedBiomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH", "COASTAL_WETLAND"],
+    status: "ACTIVE",
+    enrolledAt: "2024-01-01T00:00:00Z",
+  };
+  ENROLLED_VERIFIER_REGISTRY.set(drDas.verifierId.toLowerCase(), drDas);
+  ENROLLED_VERIFIER_REGISTRY.set(evmVerifier.verifierId.toLowerCase(), evmVerifier);
+}
+
+initializeDefaultVerifiers();
+
+/** Enrolls an accredited verification body / auditor. */
+export function enrollVerifier(
+  verifierInput: Omit<EnrolledVerifier, "enrolledAt" | "status">,
+): EnrolledVerifier {
+  const normalizedId = verifierInput.verifierId.trim().toLowerCase();
+  const enrolled: EnrolledVerifier = {
+    ...verifierInput,
+    verifierId: normalizedId,
+    enrolledAt: new Date().toISOString(),
+    status: "ACTIVE",
+  };
+  ENROLLED_VERIFIER_REGISTRY.set(normalizedId, enrolled);
+  return enrolled;
+}
+
+/** Revokes verifier credentials (e.g., following audit malpractice, accreditation expiry, or key compromise). */
+export function revokeVerifier(verifierId: string, reason: string): boolean {
+  const normalized = verifierId.trim().toLowerCase();
+  const verifier = ENROLLED_VERIFIER_REGISTRY.get(normalized);
+  if (!verifier) return false;
+  verifier.status = "REVOKED";
+  verifier.revokedAt = new Date().toISOString();
+  verifier.revocationReason = reason;
+  return true;
+}
+
+/** Retrieves an enrolled verifier by ID. */
+export function getEnrolledVerifier(verifierId: string): EnrolledVerifier | undefined {
+  return ENROLLED_VERIFIER_REGISTRY.get(verifierId.trim().toLowerCase());
+}
+
+/** Lists all enrolled verifiers. */
+export function listEnrolledVerifiers(): EnrolledVerifier[] {
+  return Array.from(ENROLLED_VERIFIER_REGISTRY.values());
+}
+
+/** Resets registry to default state (useful for test isolation). */
+export function resetEnrolledVerifierRegistry(): void {
+  ENROLLED_VERIFIER_REGISTRY.clear();
+  initializeDefaultVerifiers();
+}
+
+/**
+ * Validates whether an authoritative verifier decision:
+ * 1. Was issued by an enrolled, recognized auditor.
+ * 2. Belongs to a verifier whose status is ACTIVE (fails closed if REVOKED or SUSPENDED).
+ * 3. Authorizes the target ecosystem biome.
+ */
+export function verifyAuthoritativeReviewerDecision(
+  decision: AuthoritativeVerifierDecision | undefined,
+  targetEcosystem?: Ecosystem,
+): {
+  isValid: boolean;
+  verifier?: EnrolledVerifier | undefined;
+  errorCode?:
+    | "MISSING_DECISION"
+    | "UNENROLLED_VERIFIER"
+    | "VERIFIER_REVOKED"
+    | "VERIFIER_INACTIVE"
+    | "UNAUTHORIZED_BIOME"
+    | undefined;
+  error?: string | undefined;
+} {
+  if (!decision) {
+    return {
+      isValid: false,
+      errorCode: "MISSING_DECISION",
+      error: "Missing authoritative verifier decision",
+    };
+  }
+
+  const verifier = ENROLLED_VERIFIER_REGISTRY.get(decision.verifierId.trim().toLowerCase());
+  if (!verifier) {
+    return {
+      isValid: false,
+      errorCode: "UNENROLLED_VERIFIER",
+      error: `UNENROLLED_VERIFIER: Verifier '${decision.verifierId}' is not enrolled in the authorized verifier registry.`,
+    };
+  }
+
+  if (verifier.status === "REVOKED") {
+    return {
+      isValid: false,
+      verifier,
+      errorCode: "VERIFIER_REVOKED",
+      error: `VERIFIER_REVOKED: Verifier '${verifier.verifierId}' was revoked on ${verifier.revokedAt}: ${verifier.revocationReason}`,
+    };
+  }
+
+  if (verifier.status !== "ACTIVE") {
+    return {
+      isValid: false,
+      verifier,
+      errorCode: "VERIFIER_INACTIVE",
+      error: `VERIFIER_INACTIVE: Verifier '${verifier.verifierId}' is currently ${verifier.status}.`,
+    };
+  }
+
+  if (targetEcosystem && !verifier.authorizedBiomes.includes(targetEcosystem)) {
+    return {
+      isValid: false,
+      verifier,
+      errorCode: "UNAUTHORIZED_BIOME",
+      error: `UNAUTHORIZED_BIOME: Verifier '${verifier.verifierId}' is not authorized to audit '${targetEcosystem}' biomes.`,
+    };
+  }
+
+  return { isValid: true, verifier };
 }

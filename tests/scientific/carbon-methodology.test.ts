@@ -304,6 +304,34 @@ test("Carbon Methodology: Independent empirical validation validates model predi
   }
 });
 
+test("Carbon Methodology: Out-of-sample held-out field studies validate generalizability and conservatism", async () => {
+  const { validateModelAgainstHeldOutData, HELD_OUT_FIELD_STUDIES } =
+    await import("../../src/lib/empirical-validation-data.ts");
+
+  assert.strictEqual(HELD_OUT_FIELD_STUDIES.length, 2);
+  const report = validateModelAgainstHeldOutData(calculateScientificCarbon);
+
+  assert.strictEqual(report.totalStudiesEvaluated, 2);
+  assert.strictEqual(report.allWithinEmpiricalConfidenceIntervals, true);
+
+  for (const metric of report.metrics) {
+    assert.strictEqual(
+      metric.isWithin95ConfidenceInterval,
+      true,
+      `Held-out study ${metric.studyId} net verified (${metric.modelNetVerified} tCO2e) must fall within empirical 95% CI`,
+    );
+    // Relative error across out-of-sample held-out datasets must remain within 15%
+    const relativePctError =
+      (Math.abs(metric.modelNetVerified - metric.empiricalNetObserved) /
+        metric.empiricalNetObserved) *
+      100;
+    assert.ok(
+      relativePctError < 15,
+      `Held-out study ${metric.studyId} relative error (${relativePctError.toFixed(1)}%) must be under 15%`,
+    );
+  }
+});
+
 test("Carbon Methodology: Tier 3 produces accurate human-readable label and discount", () => {
   const result = calculateScientificCarbon({
     ecosystem: "MANGROVE",

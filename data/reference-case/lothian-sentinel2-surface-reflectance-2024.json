@@ -1,4 +1,6 @@
 {
+  "fixture_classification": "SYNTHETIC_DEMONSTRATION_FIXTURE",
+  "data_authenticity_notice": "Demonstration test fixture containing statistical summary aggregates (NDVI mean 0.742, std dev 0.041) calibrated to Ray et al. (2011) ranges. Does NOT contain primary raw Sentinel-2 L2A raster image product bands or certified ESA chain-of-custody certificates.",
   "product_id": "S2A_MSIL2A_20241210T044711_N0511_R076_T45QXF_20241210T075231",
   "satellite": "Sentinel-2A",
   "instrument": "MSI",

@@ -25,7 +25,8 @@
     "reconcile:state": "node --experimental-strip-types scripts/disaster-recovery-reconcile.ts",
     "smoke:test": "node --experimental-strip-types scripts/smoke-test.ts",
     "report:scientific": "node --experimental-strip-types scripts/generate-scientific-validation-report.ts",
-    "test:evm": "node --experimental-strip-types tests/blockchain/contract-solidity.test.ts"
+    "test:evm": "node --experimental-strip-types tests/blockchain/contract-solidity.test.ts",
+    "test:staging": "node --experimental-strip-types tests/blockchain/staging-network-deployment.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
