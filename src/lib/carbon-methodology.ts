@@ -622,7 +622,12 @@ export interface DurableDatabaseClient {
       eq: (
         col: string,
         val: unknown,
-      ) => { maybeSingle: () => Promise<{ data?: Record<string, unknown> | null }> };
+      ) => {
+        maybeSingle: () => Promise<{
+          data?: Record<string, unknown> | null;
+          error?: { message?: string } | null;
+        }>;
+      };
     };
     upsert: (
       data: unknown,
@@ -741,17 +746,22 @@ export async function getEnrolledVerifierDurable(
 ): Promise<EnrolledVerifier | undefined> {
   const normalized = verifierId.trim().toLowerCase();
   if (supabase) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("enrolled_verifiers")
       .select("*")
       .eq("verifier_id", normalized)
       .maybeSingle();
+
+    if (error) {
+      throw new Error(`Durable verifier registry query failed: ${error.message}`);
+    }
 
     if (data) {
       const verifier = mapDbRowToEnrolledVerifier(data);
       ENROLLED_VERIFIER_REGISTRY.set(normalized, verifier);
       return verifier;
     }
+    return undefined;
   }
   return getEnrolledVerifier(normalized);
 }

@@ -149,6 +149,23 @@ test("E2E Evidence: approveProject fails closed if evidence verification fails",
           }),
         } as never;
       }
+      if (table === "enrolled_verifiers") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  verifier_id: VERIFIER_ID,
+                  status: "ACTIVE",
+                  authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                  accreditation_expires_at: "2030-12-31T23:59:59Z",
+                },
+                error: null,
+              }),
+            }),
+          }),
+        } as never;
+      }
       if (table === "projects") {
         return {
           select: () => ({

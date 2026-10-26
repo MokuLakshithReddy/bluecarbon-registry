@@ -191,6 +191,19 @@ test("State Machine: approveProject fails closed and refuses non-atomic fallback
               if (table === "user_roles") {
                 return Promise.resolve({ data: rolesData, error: null }).then(resolve);
               }
+              if (table === "enrolled_verifiers") {
+                return Promise.resolve({
+                  data: [
+                    {
+                      verifier_id: "test-verifier",
+                      status: "ACTIVE",
+                      authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                      accreditation_expires_at: "2030-12-31T23:59:59Z",
+                    },
+                  ],
+                  error: null,
+                }).then(resolve);
+              }
               if (table === "evidence") {
                 return Promise.resolve({
                   data: [
@@ -211,10 +224,23 @@ test("State Machine: approveProject fails closed and refuses non-atomic fallback
               data: projectData,
               error: null,
             }),
-            maybeSingle: async () => ({
-              data: table === "user_roles" ? rolesData[0] : projectData,
-              error: null,
-            }),
+            maybeSingle: async () => {
+              if (table === "enrolled_verifiers") {
+                return {
+                  data: {
+                    verifier_id: "test-verifier",
+                    status: "ACTIVE",
+                    authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                    accreditation_expires_at: "2030-12-31T23:59:59Z",
+                  },
+                  error: null,
+                };
+              }
+              return {
+                data: table === "user_roles" ? rolesData[0] : projectData,
+                error: null,
+              };
+            },
           };
         },
       }),
@@ -322,16 +348,42 @@ test("State Machine: Strict evidence validation requires error checks and crypto
               if (table === "user_roles") {
                 return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
               }
+              if (table === "enrolled_verifiers") {
+                return Promise.resolve({
+                  data: [
+                    {
+                      verifier_id: "00000000-0000-0000-0000-000000000001",
+                      status: "ACTIVE",
+                      authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                      accreditation_expires_at: "2030-12-31T23:59:59Z",
+                    },
+                  ],
+                  error: null,
+                }).then(resolve);
+              }
               if (table === "evidence") {
                 return Promise.resolve(evidenceResult).then(resolve);
               }
               return Promise.resolve({ data: [projectData], error: null }).then(resolve);
             },
             single: async () => ({ data: projectData, error: null }),
-            maybeSingle: async () => ({
-              data: table === "user_roles" ? { role: "verifier" } : projectData,
-              error: null,
-            }),
+            maybeSingle: async () => {
+              if (table === "enrolled_verifiers") {
+                return {
+                  data: {
+                    verifier_id: "00000000-0000-0000-0000-000000000001",
+                    status: "ACTIVE",
+                    authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                    accreditation_expires_at: "2030-12-31T23:59:59Z",
+                  },
+                  error: null,
+                };
+              }
+              return {
+                data: table === "user_roles" ? { role: "verifier" } : projectData,
+                error: null,
+              };
+            },
           }),
         }),
       }),
@@ -458,6 +510,19 @@ test("State Machine: approveProject handles anchoring failures and transitions t
               if (table === "user_roles") {
                 return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
               }
+              if (table === "enrolled_verifiers") {
+                return Promise.resolve({
+                  data: [
+                    {
+                      verifier_id: "00000000-0000-0000-0000-000000000001",
+                      status: "ACTIVE",
+                      authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                      accreditation_expires_at: "2030-12-31T23:59:59Z",
+                    },
+                  ],
+                  error: null,
+                }).then(resolve);
+              }
               if (table === "evidence") {
                 return Promise.resolve({ data: validEvidence, error: null }).then(resolve);
               }
@@ -467,13 +532,26 @@ test("State Machine: approveProject handles anchoring failures and transitions t
               }).then(resolve);
             },
             single: async () => ({ data: { ...projectData, status: projectStatus }, error: null }),
-            maybeSingle: async () => ({
-              data:
-                table === "user_roles"
-                  ? { role: "verifier" }
-                  : { ...projectData, status: projectStatus },
-              error: null,
-            }),
+            maybeSingle: async () => {
+              if (table === "enrolled_verifiers") {
+                return {
+                  data: {
+                    verifier_id: "00000000-0000-0000-0000-000000000001",
+                    status: "ACTIVE",
+                    authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                    accreditation_expires_at: "2030-12-31T23:59:59Z",
+                  },
+                  error: null,
+                };
+              }
+              return {
+                data:
+                  table === "user_roles"
+                    ? { role: "verifier" }
+                    : { ...projectData, status: projectStatus },
+                error: null,
+              };
+            },
           }),
         }),
       }),
@@ -617,16 +695,42 @@ test("State Machine: approveProject handles anchoring failures and transitions t
             if (table === "user_roles") {
               return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
             }
+            if (table === "enrolled_verifiers") {
+              return Promise.resolve({
+                data: [
+                  {
+                    verifier_id: "00000000-0000-0000-0000-000000000001",
+                    status: "ACTIVE",
+                    authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                    accreditation_expires_at: "2030-12-31T23:59:59Z",
+                  },
+                ],
+                error: null,
+              }).then(resolve);
+            }
             if (table === "evidence") {
               return Promise.resolve({ data: validEvidence, error: null }).then(resolve);
             }
             return Promise.resolve({ data: [pendingProject], error: null }).then(resolve);
           },
           single: async () => ({ data: pendingProject, error: null }),
-          maybeSingle: async () => ({
-            data: table === "user_roles" ? { role: "verifier" } : pendingProject,
-            error: null,
-          }),
+          maybeSingle: async () => {
+            if (table === "enrolled_verifiers") {
+              return {
+                data: {
+                  verifier_id: "00000000-0000-0000-0000-000000000001",
+                  status: "ACTIVE",
+                  authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                  accreditation_expires_at: "2030-12-31T23:59:59Z",
+                },
+                error: null,
+              };
+            }
+            return {
+              data: table === "user_roles" ? { role: "verifier" } : pendingProject,
+              error: null,
+            };
+          },
         }),
       }),
     }),
@@ -718,16 +822,42 @@ test("State Machine: Evidence provenance fails closed across all invalid or tamp
               if (table === "user_roles") {
                 return Promise.resolve({ data: [{ role: "verifier" }], error: null }).then(resolve);
               }
+              if (table === "enrolled_verifiers") {
+                return Promise.resolve({
+                  data: [
+                    {
+                      verifier_id: "00000000-0000-0000-0000-000000000001",
+                      status: "ACTIVE",
+                      authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                      accreditation_expires_at: "2030-12-31T23:59:59Z",
+                    },
+                  ],
+                  error: null,
+                }).then(resolve);
+              }
               if (table === "evidence") {
                 return Promise.resolve({ data: [opts.evidenceItem], error: null }).then(resolve);
               }
               return Promise.resolve({ data: [project], error: null }).then(resolve);
             },
             single: async () => ({ data: project, error: null }),
-            maybeSingle: async () => ({
-              data: table === "user_roles" ? { role: "verifier" } : project,
-              error: null,
-            }),
+            maybeSingle: async () => {
+              if (table === "enrolled_verifiers") {
+                return {
+                  data: {
+                    verifier_id: "00000000-0000-0000-0000-000000000001",
+                    status: "ACTIVE",
+                    authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                    accreditation_expires_at: "2030-12-31T23:59:59Z",
+                  },
+                  error: null,
+                };
+              }
+              return {
+                data: table === "user_roles" ? { role: "verifier" } : project,
+                error: null,
+              };
+            },
           }),
         }),
       }),

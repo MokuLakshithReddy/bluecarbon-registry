@@ -247,7 +247,12 @@ export interface DurableDatabaseClient {
       eq: (
         col: string,
         val: unknown,
-      ) => { maybeSingle: () => Promise<{ data?: Record<string, unknown> | null }> };
+      ) => {
+        maybeSingle: () => Promise<{
+          data?: Record<string, unknown> | null;
+          error?: { message?: string } | null;
+        }>;
+      };
     };
     upsert: (
       data: unknown,
@@ -373,17 +378,22 @@ export async function getEnrolledDeviceDurable(
 ): Promise<EnrolledSensorDevice | undefined> {
   const normalized = signerAddress.trim().toLowerCase();
   if (supabase) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("enrolled_sensor_devices")
       .select("*")
       .eq("signer_address", normalized)
       .maybeSingle();
+
+    if (error) {
+      throw new Error(`Durable sensor registry query failed: ${error.message}`);
+    }
 
     if (data) {
       const device = mapDbRowToEnrolledDevice(data);
       ENROLLED_SENSOR_REGISTRY.set(normalized, device);
       return device;
     }
+    return undefined;
   }
   return getEnrolledDevice(normalized);
 }

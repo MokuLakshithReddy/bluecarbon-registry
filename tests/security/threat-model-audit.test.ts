@@ -4,6 +4,7 @@ import {
   approveProject,
   startReview,
   rejectProject,
+  assertVerifier,
   type VerifierClient,
 } from "../../src/lib/registry.server.ts";
 
@@ -51,6 +52,26 @@ function createMockSupabase(overrides: {
                 data: role === "none" ? [] : [{ role }],
                 error: null,
               }),
+          }),
+        };
+      }
+      if (table === "enrolled_verifiers") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data:
+                  role === "none"
+                    ? null
+                    : {
+                        verifier_id: currentUserId,
+                        status: "ACTIVE",
+                        authorized_biomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH"],
+                        accreditation_expires_at: "2030-12-31T23:59:59Z",
+                      },
+                error: null,
+              }),
+            }),
           }),
         };
       }
@@ -203,4 +224,218 @@ test("Threat Model: rejection requires explanation comments", async () => {
       comments: "   ", // empty comments
     });
   }, /Verifier comments \(minimum 5 characters\) are required/i);
+});
+
+test("Trust Registry Fail-Closed: asserts valid enrollment, active status, unexpired accreditation, and authorized biome", async () => {
+  const createTrustClient = (overrides: {
+    rolesResult?: { data: { role: string }[] | null; error: { message: string } | null };
+    enrollResult?: {
+      data: {
+        status?: string;
+        authorized_biomes?: string[];
+        accreditation_expires_at?: string | null;
+      } | null;
+      error: { message: string } | null;
+    };
+  }) => {
+    return {
+      from: (table: string) => {
+        if (table === "user_roles") {
+          return {
+            select: () => ({
+              eq: () =>
+                Promise.resolve(
+                  overrides.rolesResult ?? { data: [{ role: "verifier" }], error: null },
+                ),
+            }),
+          };
+        }
+        if (table === "enrolled_verifiers") {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () =>
+                  overrides.enrollResult ?? {
+                    data: {
+                      status: "ACTIVE",
+                      authorized_biomes: ["MANGROVE"],
+                      accreditation_expires_at: "2030-12-31T23:59:59Z",
+                    },
+                    error: null,
+                  },
+              }),
+            }),
+          };
+        }
+        return {};
+      },
+    } as unknown as VerifierClient;
+  };
+
+  const verifierId = "00000000-0000-4000-8000-000000000001";
+
+  // 1. Role verification query failure fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        rolesResult: { data: null, error: { message: "Database socket timeout" } },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Role verification failed: Database socket timeout/,
+    "Must reject role query failures",
+  );
+
+  // 2. Trust registry query error fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: { data: null, error: { message: "Connection pool exhausted" } },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Trust registry query failed: Connection pool exhausted/,
+    "Must reject trust registry query failures",
+  );
+
+  // 3. Missing enrollment record fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: { data: null, error: null },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /is not enrolled in the authorized verifier trust registry/,
+    "Must reject verifier with missing enrollment record",
+  );
+
+  // 4. Revoked accreditation fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: {
+          data: {
+            status: "REVOKED",
+            authorized_biomes: ["MANGROVE"],
+            accreditation_expires_at: "2030-12-31T23:59:59Z",
+          },
+          error: null,
+        },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Verifier accreditation has been revoked in the trust registry/,
+    "Must reject revoked accreditation",
+  );
+
+  // 5. Suspended accreditation fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: {
+          data: {
+            status: "SUSPENDED",
+            authorized_biomes: ["MANGROVE"],
+            accreditation_expires_at: "2030-12-31T23:59:59Z",
+          },
+          error: null,
+        },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Verifier accreditation is currently suspended in the trust registry/,
+    "Must reject suspended accreditation",
+  );
+
+  // 6. Non-ACTIVE status (e.g. UNDER_REVIEW or PENDING) fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: {
+          data: {
+            status: "PENDING_ACCREDITATION",
+            authorized_biomes: ["MANGROVE"],
+            accreditation_expires_at: "2030-12-31T23:59:59Z",
+          },
+          error: null,
+        },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Verifier status is 'PENDING_ACCREDITATION', expected 'ACTIVE' in the trust registry/,
+    "Must reject non-ACTIVE status",
+  );
+
+  // 7. Expired accreditation date fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: {
+          data: {
+            status: "ACTIVE",
+            authorized_biomes: ["MANGROVE"],
+            accreditation_expires_at: "2020-01-01T00:00:00Z", // Past date
+          },
+          error: null,
+        },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Verifier professional accreditation has expired in the trust registry/,
+    "Must reject expired accreditation",
+  );
+
+  // 8. Missing accreditation expiry date fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: {
+          data: {
+            status: "ACTIVE",
+            authorized_biomes: ["MANGROVE"],
+            accreditation_expires_at: null,
+          },
+          error: null,
+        },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Verifier professional accreditation has expired in the trust registry/,
+    "Must reject missing accreditation expiry date",
+  );
+
+  // 9. Unauthorized biome fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: {
+          data: {
+            status: "ACTIVE",
+            authorized_biomes: ["MANGROVE"],
+            accreditation_expires_at: "2030-12-31T23:59:59Z",
+          },
+          error: null,
+        },
+      });
+      await assertVerifier(client, verifierId, "SEAGRASS");
+    },
+    /is not accredited for biome 'SEAGRASS'\. Authorized biomes: MANGROVE/,
+    "Must reject unauthorized biome",
+  );
+
+  // 10. Valid enrollment and matching biome succeeds
+  const validClient = createTrustClient({
+    enrollResult: {
+      data: {
+        status: "ACTIVE",
+        authorized_biomes: ["MANGROVE", "SEAGRASS"],
+        accreditation_expires_at: "2030-12-31T23:59:59Z",
+      },
+      error: null,
+    },
+  });
+  await assert.doesNotReject(async () => {
+    await assertVerifier(validClient, verifierId, "MANGROVE");
+  });
 });

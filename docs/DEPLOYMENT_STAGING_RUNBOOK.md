@@ -139,9 +139,9 @@ This test suite executes:
 When deploying to Ethereum Sepolia or Polygon Amoy, supply your funded credentials via environment secrets (never commit them):
 
 ```bash
-STAGING_RPC_URL="https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY" \
-STAGING_CONTRACT_ADDRESS="0xYourDeployedContractAddress" \
-STAGING_PRIVATE_KEY="0xYourFundedKey" \
+STAGING_RPC_URL="$YOUR_STAGING_RPC_URL" \
+STAGING_CONTRACT_ADDRESS="$YOUR_STAGING_CONTRACT_ADDRESS" \
+STAGING_PRIVATE_KEY="$YOUR_STAGING_PRIVATE_KEY" \
 STAGING_CHAIN_ID=11155111 \
 npm run test:staging
 ```
