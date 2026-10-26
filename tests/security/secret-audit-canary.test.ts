@@ -84,7 +84,36 @@ test("Security Audit Canary: Dependency audit fails closed on empty or unparseab
   assert.strictEqual(malformedRes.passed, false, "Malformed/HTML audit output must fail closed");
   assert.strictEqual(malformedRes.unapprovedCount, 1);
 
-  // 4. Valid empty vulnerabilities JSON passes
+  // 4. Incomplete report: Empty object {} missing vulnerabilities field must fail closed
+  const emptyObjRes = checkDependencyAudit(JSON.stringify({}));
+  assert.strictEqual(emptyObjRes.passed, false, "Empty JSON object {} must fail closed");
+  assert.strictEqual(emptyObjRes.unapprovedCount, 1);
+
+  // 5. Incomplete report: Metadata-only object missing vulnerabilities field must fail closed
+  const metaOnlyRes = checkDependencyAudit(
+    JSON.stringify({ metadata: { totalDependencies: 150 } }),
+  );
+  assert.strictEqual(metaOnlyRes.passed, false, "Metadata-only object must fail closed");
+  assert.strictEqual(metaOnlyRes.unapprovedCount, 1);
+
+  // 6. Invalid vulnerabilities type: null, string, number, boolean, array must fail closed
+  const nullVulnRes = checkDependencyAudit(JSON.stringify({ vulnerabilities: null }));
+  assert.strictEqual(nullVulnRes.passed, false, "Null vulnerabilities field must fail closed");
+  assert.strictEqual(nullVulnRes.unapprovedCount, 1);
+
+  const strVulnRes = checkDependencyAudit(JSON.stringify({ vulnerabilities: "none" }));
+  assert.strictEqual(strVulnRes.passed, false, "String vulnerabilities field must fail closed");
+  assert.strictEqual(strVulnRes.unapprovedCount, 1);
+
+  const numVulnRes = checkDependencyAudit(JSON.stringify({ vulnerabilities: 0 }));
+  assert.strictEqual(numVulnRes.passed, false, "Numeric vulnerabilities field must fail closed");
+  assert.strictEqual(numVulnRes.unapprovedCount, 1);
+
+  const arrVulnRes = checkDependencyAudit(JSON.stringify({ vulnerabilities: [] }));
+  assert.strictEqual(arrVulnRes.passed, false, "Array vulnerabilities field must fail closed");
+  assert.strictEqual(arrVulnRes.unapprovedCount, 1);
+
+  // 7. Valid empty vulnerabilities JSON passes
   const cleanRes = checkDependencyAudit(JSON.stringify({ vulnerabilities: {} }));
   assert.strictEqual(cleanRes.passed, true, "Valid clean audit JSON must pass");
   assert.strictEqual(cleanRes.unapprovedCount, 0);

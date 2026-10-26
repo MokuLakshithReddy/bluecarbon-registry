@@ -482,16 +482,7 @@ export function checkDependencyAudit(injectedOutput?: string): {
     return { passed: false, unapprovedCount: 1 };
   }
 
-  let auditJson: {
-    vulnerabilities?: Record<
-      string,
-      {
-        name: string;
-        severity: string;
-        via: Array<string | { url?: string; title?: string }>;
-      }
-    >;
-  };
+  let auditJson: Record<string, unknown>;
 
   try {
     auditJson = JSON.parse(auditOutput);
@@ -500,7 +491,30 @@ export function checkDependencyAudit(injectedOutput?: string): {
     return { passed: false, unapprovedCount: 1 };
   }
 
-  const vulnerabilities = auditJson.vulnerabilities || {};
+  if (
+    !auditJson ||
+    typeof auditJson !== "object" ||
+    Array.isArray(auditJson) ||
+    !("vulnerabilities" in auditJson) ||
+    !auditJson.vulnerabilities ||
+    typeof auditJson.vulnerabilities !== "object" ||
+    Array.isArray(auditJson.vulnerabilities)
+  ) {
+    console.error(
+      "[FAIL] Dependency audit failed-closed: Invalid audit report schema. Missing or invalid 'vulnerabilities' object.",
+    );
+    return { passed: false, unapprovedCount: 1 };
+  }
+
+  const vulnerabilities = auditJson.vulnerabilities as Record<
+    string,
+    {
+      name: string;
+      severity: string;
+      via: Array<string | { url?: string; title?: string }>;
+      nodes?: string[];
+    }
+  >;
   const unapproved: string[] = [];
   const now = Date.now();
 
