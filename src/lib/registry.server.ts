@@ -227,10 +227,16 @@ export async function assertVerifier(
     );
   }
 
-  if (
-    !verifierRecord.accreditation_expires_at ||
-    new Date(verifierRecord.accreditation_expires_at).getTime() < Date.now()
-  ) {
+  const expiresAt = verifierRecord.accreditation_expires_at;
+  const expiryTimestamp = expiresAt ? new Date(expiresAt).getTime() : NaN;
+
+  if (!Number.isFinite(expiryTimestamp) || isNaN(expiryTimestamp)) {
+    throw new Error(
+      "Unauthorized: Verifier professional accreditation timestamp is invalid or non-finite in the trust registry.",
+    );
+  }
+
+  if (expiryTimestamp < Date.now()) {
     throw new Error(
       "Unauthorized: Verifier professional accreditation has expired in the trust registry.",
     );

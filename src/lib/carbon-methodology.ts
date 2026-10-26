@@ -786,6 +786,7 @@ export function verifyAuthoritativeReviewerDecision(
     | "VERIFIER_REVOKED"
     | "VERIFIER_INACTIVE"
     | "ACCREDITATION_EXPIRED"
+    | "ACCREDITATION_INVALID_TIMESTAMP"
     | "UNAUTHORIZED_BIOME"
     | undefined;
   error?: string | undefined;
@@ -828,10 +829,20 @@ export function verifyAuthoritativeReviewerDecision(
   }
 
   const nowTime = options?.asOfDate ? options.asOfDate.getTime() : Date.now();
-  if (
-    verifier.accreditationExpiresAt &&
-    new Date(verifier.accreditationExpiresAt).getTime() <= nowTime
-  ) {
+  const expiryTimestamp = verifier.accreditationExpiresAt
+    ? new Date(verifier.accreditationExpiresAt).getTime()
+    : NaN;
+
+  if (!Number.isFinite(expiryTimestamp) || isNaN(expiryTimestamp)) {
+    return {
+      isValid: false,
+      verifier,
+      errorCode: "ACCREDITATION_INVALID_TIMESTAMP",
+      error: `ACCREDITATION_INVALID_TIMESTAMP: Verifier '${verifier.verifierId}' has an invalid or non-finite accreditation timestamp: '${verifier.accreditationExpiresAt}'.`,
+    };
+  }
+
+  if (expiryTimestamp <= nowTime) {
     return {
       isValid: false,
       verifier,
@@ -869,6 +880,7 @@ export async function verifyAuthoritativeReviewerDecisionDurable(
     | "VERIFIER_REVOKED"
     | "VERIFIER_INACTIVE"
     | "ACCREDITATION_EXPIRED"
+    | "ACCREDITATION_INVALID_TIMESTAMP"
     | "UNAUTHORIZED_BIOME"
     | undefined;
   error?: string | undefined;

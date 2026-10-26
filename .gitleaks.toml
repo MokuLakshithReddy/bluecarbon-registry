@@ -24,9 +24,9 @@ regexes = [
   '''0xYourFundedKey''',
 ]
 commits = [
-  # Historical commit a8ce01c contained an illustrative placeholder in deployment documentation.
+  # Historical commit a8ce01c6f3bd56f127267ea81b2eafd1c94470ab contained an illustrative placeholder in deployment documentation.
   # Scoped specifically to this single past commit so the file itself is NOT excluded from future scans.
-  '''a8ce01cae8b09337583797686bceca24eecf2c16''',
+  '''a8ce01c6f3bd56f127267ea81b2eafd1c94470ab''',
 ]
 paths = [
   '''\.example$''',

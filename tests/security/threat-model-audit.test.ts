@@ -439,8 +439,27 @@ test("Trust Registry Fail-Closed: asserts valid enrollment, active status, unexp
       });
       await assertVerifier(client, verifierId);
     },
-    /Verifier professional accreditation has expired in the trust registry/,
+    /Verifier professional accreditation timestamp is invalid or non-finite in the trust registry/,
     "Must reject missing accreditation expiry date",
+  );
+
+  // 8b. Unparseable / non-finite accreditation expiry date fails closed
+  await assert.rejects(
+    async () => {
+      const client = createTrustClient({
+        enrollResult: {
+          data: {
+            status: "ACTIVE",
+            authorized_biomes: ["MANGROVE"],
+            accreditation_expires_at: "invalid-timestamp-string",
+          },
+          error: null,
+        },
+      });
+      await assertVerifier(client, verifierId);
+    },
+    /Verifier professional accreditation timestamp is invalid or non-finite in the trust registry/,
+    "Must reject unparseable/non-finite accreditation expiry date",
   );
 
   // 9. Unauthorized biome fails closed

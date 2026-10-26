@@ -165,6 +165,7 @@ export interface EnrolledSensorVerificationResult {
     | "DEVICE_KEY_REVOKED"
     | "DEVICE_INACTIVE"
     | "CALIBRATION_EXPIRED"
+    | "CALIBRATION_INVALID_TIMESTAMP"
     | "PROJECT_MISMATCH"
     | "HARDWARE_ID_MISMATCH"
     | "CRYPTO_ERROR"
@@ -449,7 +450,21 @@ export function verifyEnrolledSensorTelemetry(
 
     // Calibration certificate expiration enforcement
     const nowTime = options?.asOfDate ? options.asOfDate.getTime() : Date.now();
-    if (device.calibrationExpiresAt && new Date(device.calibrationExpiresAt).getTime() <= nowTime) {
+    const expiryTimestamp = device.calibrationExpiresAt
+      ? new Date(device.calibrationExpiresAt).getTime()
+      : NaN;
+
+    if (!Number.isFinite(expiryTimestamp) || isNaN(expiryTimestamp)) {
+      return {
+        isValid: false,
+        recoveredSigner,
+        device,
+        errorCode: "CALIBRATION_INVALID_TIMESTAMP",
+        error: `CALIBRATION_INVALID_TIMESTAMP: Device '${device.deviceId}' has an invalid or non-finite calibration timestamp: '${device.calibrationExpiresAt}'.`,
+      };
+    }
+
+    if (expiryTimestamp <= nowTime) {
       return {
         isValid: false,
         recoveredSigner,

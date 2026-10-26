@@ -457,22 +457,29 @@ const AUDITED_SECURITY_EXCEPTIONS: AuditedSecurityException[] = [
   },
 ];
 
-function checkDependencyAudit(): { passed: boolean; unapprovedCount: number } {
+export function checkDependencyAudit(injectedOutput?: string): {
+  passed: boolean;
+  unapprovedCount: number;
+} {
   console.log("\n=== Checking Dependencies Audit (Fail-Closed Enforcement) ===");
-  let auditOutput = "";
-  try {
-    auditOutput = execSync("npm audit --json", {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (err: unknown) {
-    const execErr = err as { stdout?: string };
-    auditOutput = execErr.stdout || "";
+  let auditOutput = injectedOutput;
+  if (auditOutput === undefined) {
+    try {
+      auditOutput = execSync("npm audit --json", {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err: unknown) {
+      const execErr = err as { stdout?: string };
+      auditOutput = execErr.stdout || "";
+    }
   }
 
-  if (!auditOutput) {
-    console.log("[PASS] No npm audit report produced; dependencies clean.");
-    return { passed: true, unapprovedCount: 0 };
+  if (!auditOutput || !auditOutput.trim()) {
+    console.error(
+      "[FAIL] Dependency audit failed-closed: No npm audit report produced or output was empty.",
+    );
+    return { passed: false, unapprovedCount: 1 };
   }
 
   let auditJson: {

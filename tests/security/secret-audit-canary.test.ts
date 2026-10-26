@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert";
-import { scanTextForSecrets, scanGitHistory } from "../../scripts/security-audit.ts";
+import {
+  scanTextForSecrets,
+  scanGitHistory,
+  checkDependencyAudit,
+} from "../../scripts/security-audit.ts";
 
 test("Security Audit Canary: Scanner reliably detects synthetic canary secrets in text payloads", () => {
   // Test detection of Supabase service role token (constructed in memory)
@@ -62,4 +66,26 @@ test("Security Audit Canary: Git history scanner fails closed when git inspectio
     0,
     "No real secrets must exist in repository git history",
   );
+});
+
+test("Security Audit Canary: Dependency audit fails closed on empty or unparseable audit report", () => {
+  // 1. Empty string output must fail closed
+  const emptyRes = checkDependencyAudit("");
+  assert.strictEqual(emptyRes.passed, false, "Empty audit output must fail closed");
+  assert.strictEqual(emptyRes.unapprovedCount, 1);
+
+  // 2. Whitespace-only output must fail closed
+  const whitespaceRes = checkDependencyAudit("   \n\t   ");
+  assert.strictEqual(whitespaceRes.passed, false, "Whitespace audit output must fail closed");
+  assert.strictEqual(whitespaceRes.unapprovedCount, 1);
+
+  // 3. Malformed JSON must fail closed
+  const malformedRes = checkDependencyAudit("Internal Server Error 500: npm registry unavailable");
+  assert.strictEqual(malformedRes.passed, false, "Malformed/HTML audit output must fail closed");
+  assert.strictEqual(malformedRes.unapprovedCount, 1);
+
+  // 4. Valid empty vulnerabilities JSON passes
+  const cleanRes = checkDependencyAudit(JSON.stringify({ vulnerabilities: {} }));
+  assert.strictEqual(cleanRes.passed, true, "Valid clean audit JSON must pass");
+  assert.strictEqual(cleanRes.unapprovedCount, 0);
 });
