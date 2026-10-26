@@ -5,6 +5,11 @@ import { AlertTriangle, CheckCircle2, FileText, MapPin } from "lucide-react";
 import { getSignedEvidenceUrls } from "@/lib/registry.functions";
 import { EVIDENCE_TYPE_LABEL, formatDate, type EvidenceRow } from "@/lib/domain";
 import {
+  isSyntheticFixture,
+  SyntheticFixtureBadge,
+  SyntheticFixtureBanner,
+} from "@/components/CarbonDisclaimer";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -72,6 +77,10 @@ export function EvidenceGallery({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => {
           const url = resolve(item.file_url);
+          const isSynthetic =
+            isSyntheticFixture(item.file_name) ||
+            isSyntheticFixture(item.file_url) ||
+            isSyntheticFixture(item.evidence_code);
           return (
             <button
               key={item.id}
@@ -97,11 +106,14 @@ export function EvidenceGallery({
               <div className="space-y-1 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="truncate text-sm font-medium">{item.file_name}</p>
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase ${REVIEW_TONE[item.review_status] ?? REVIEW_TONE["PENDING"]}`}
-                  >
-                    {item.review_status}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    {isSynthetic ? <SyntheticFixtureBadge /> : null}
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase ${REVIEW_TONE[item.review_status] ?? REVIEW_TONE["PENDING"]}`}
+                    >
+                      {item.review_status}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {EVIDENCE_TYPE_LABEL[item.evidence_type] ?? item.evidence_type} ·{" "}
@@ -124,12 +136,24 @@ export function EvidenceGallery({
           {active ? (
             <>
               <DialogHeader>
-                <DialogTitle className="truncate">{active.file_name}</DialogTitle>
+                <div className="flex items-center gap-2">
+                  <DialogTitle className="truncate">{active.file_name}</DialogTitle>
+                  {isSyntheticFixture(active.file_name) ||
+                  isSyntheticFixture(active.file_url) ||
+                  isSyntheticFixture(active.evidence_code) ? (
+                    <SyntheticFixtureBadge />
+                  ) : null}
+                </div>
                 <DialogDescription>
                   {active.evidence_code ?? active.id.slice(0, 8)} ·{" "}
                   {EVIDENCE_TYPE_LABEL[active.evidence_type] ?? active.evidence_type}
                 </DialogDescription>
               </DialogHeader>
+              {isSyntheticFixture(active.file_name) ||
+              isSyntheticFixture(active.file_url) ||
+              isSyntheticFixture(active.evidence_code) ? (
+                <SyntheticFixtureBanner />
+              ) : null}
               {resolve(active.file_url) && isImage(active) ? (
                 <img
                   src={resolve(active.file_url)!}

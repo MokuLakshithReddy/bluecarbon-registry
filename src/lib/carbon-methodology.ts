@@ -526,14 +526,16 @@ export function createAuthoritativeVerifierDecision(
 // Trusted Verifier Enrollment & Authorization Registry
 // ---------------------------------------------------------------------------
 
-export type VerifierStatus = "ACTIVE" | "REVOKED" | "SUSPENDED";
+export type VerifierStatus = "ACTIVE" | "REVOKED" | "SUSPENDED" | "EXPIRED";
 
 export interface EnrolledVerifier {
   verifierId: string;
   organization: string;
   accreditationNumber: string;
+  accreditationExpiresAt: string;
   authorizedBiomes: Ecosystem[];
   status: VerifierStatus;
+  signerAddress?: string | undefined;
   enrolledAt: string;
   revokedAt?: string | undefined;
   revocationReason?: string | undefined;
@@ -546,6 +548,7 @@ function initializeDefaultVerifiers() {
     verifierId: "nccr-auditor-dr-das",
     organization: "National Centre for Coastal Research (NCCR) Estuarine Division",
     accreditationNumber: "VVB-NCCR-IND-2024-001",
+    accreditationExpiresAt: "2028-12-31T23:59:59Z",
     authorizedBiomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH", "COASTAL_WETLAND"],
     status: "ACTIVE",
     enrolledAt: "2024-01-01T00:00:00Z",
@@ -554,7 +557,9 @@ function initializeDefaultVerifiers() {
     verifierId: "0x2222222222222222222222222222222222222222".toLowerCase(),
     organization: "Accredited Blue Carbon Validation Body (VVB-001)",
     accreditationNumber: "VVB-ISO-14064-2024",
+    accreditationExpiresAt: "2028-12-31T23:59:59Z",
     authorizedBiomes: ["MANGROVE", "SEAGRASS", "SALT_MARSH", "COASTAL_WETLAND"],
+    signerAddress: "0x2222222222222222222222222222222222222222".toLowerCase(),
     status: "ACTIVE",
     enrolledAt: "2024-01-01T00:00:00Z",
   };
@@ -564,16 +569,21 @@ function initializeDefaultVerifiers() {
 
 initializeDefaultVerifiers();
 
-/** Enrolls an accredited verification body / auditor. */
+/** Enrolls an accredited verification body / auditor in local memory. */
 export function enrollVerifier(
-  verifierInput: Omit<EnrolledVerifier, "enrolledAt" | "status">,
+  verifierInput: Omit<EnrolledVerifier, "enrolledAt" | "status"> & {
+    accreditationExpiresAt?: string | undefined;
+    status?: VerifierStatus | undefined;
+    enrolledAt?: string | undefined;
+  },
 ): EnrolledVerifier {
   const normalizedId = verifierInput.verifierId.trim().toLowerCase();
   const enrolled: EnrolledVerifier = {
     ...verifierInput,
+    accreditationExpiresAt: verifierInput.accreditationExpiresAt || "2028-12-31T23:59:59Z",
     verifierId: normalizedId,
-    enrolledAt: new Date().toISOString(),
-    status: "ACTIVE",
+    enrolledAt: verifierInput.enrolledAt || new Date().toISOString(),
+    status: verifierInput.status || "ACTIVE",
   };
   ENROLLED_VERIFIER_REGISTRY.set(normalizedId, enrolled);
   return enrolled;
@@ -606,15 +616,157 @@ export function resetEnrolledVerifierRegistry(): void {
   initializeDefaultVerifiers();
 }
 
+export interface DurableDatabaseClient {
+  from: (table: string) => {
+    select: (cols?: string) => {
+      eq: (
+        col: string,
+        val: unknown,
+      ) => { maybeSingle: () => Promise<{ data?: Record<string, unknown> | null }> };
+    };
+    upsert: (
+      data: unknown,
+      opts?: { onConflict?: string },
+    ) => {
+      select: () => {
+        single: () => Promise<{
+          data?: Record<string, unknown> | null;
+          error?: { message?: string };
+        }>;
+      };
+    };
+    update: (data: unknown) => {
+      eq: (
+        col: string,
+        val: unknown,
+      ) => { select: () => Promise<{ data?: Record<string, unknown>[] | null; error?: unknown }> };
+    };
+  };
+}
+
+/**
+ * Maps database row to EnrolledVerifier domain model.
+ */
+export function mapDbRowToEnrolledVerifier(row: Record<string, unknown>): EnrolledVerifier {
+  return {
+    verifierId: String(row["verifier_id"]).toLowerCase(),
+    organization: String(row["organization"]),
+    accreditationNumber: String(row["accreditation_number"]),
+    accreditationExpiresAt: String(row["accreditation_expires_at"]),
+    authorizedBiomes: (Array.isArray(row["authorized_biomes"])
+      ? row["authorized_biomes"]
+      : []) as Ecosystem[],
+    signerAddress: row["signer_address"] ? String(row["signer_address"]).toLowerCase() : undefined,
+    status: row["status"] as VerifierStatus,
+    enrolledAt: String(row["enrolled_at"]),
+    revokedAt: row["revoked_at"] ? String(row["revoked_at"]) : undefined,
+    revocationReason: row["revocation_reason"] ? String(row["revocation_reason"]) : undefined,
+  };
+}
+
+/**
+ * Persists an accredited verifier durably into the PostgreSQL / Supabase trust registry.
+ */
+export async function enrollVerifierDurable(
+  supabase: DurableDatabaseClient,
+  verifierInput: Omit<EnrolledVerifier, "enrolledAt" | "status"> & {
+    enrolledBy?: string | undefined;
+  },
+): Promise<EnrolledVerifier> {
+  const normalizedId = verifierInput.verifierId.trim().toLowerCase();
+  const { data, error } = await supabase
+    .from("enrolled_verifiers")
+    .upsert(
+      {
+        verifier_id: normalizedId,
+        organization: verifierInput.organization,
+        accreditation_number: verifierInput.accreditationNumber,
+        accreditation_expires_at: verifierInput.accreditationExpiresAt,
+        authorized_biomes: verifierInput.authorizedBiomes,
+        signer_address: verifierInput.signerAddress?.toLowerCase() ?? null,
+        status: "ACTIVE",
+        enrolled_by: verifierInput.enrolledBy ?? null,
+      },
+      { onConflict: "verifier_id" },
+    )
+    .select()
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Failed to enroll verifier durably: ${error?.message || "Unknown database error"}`,
+    );
+  }
+
+  const verifier = mapDbRowToEnrolledVerifier(data);
+  ENROLLED_VERIFIER_REGISTRY.set(normalizedId, verifier);
+  return verifier;
+}
+
+/**
+ * Revokes a verifier's credentials durably in the database with audit provenance.
+ */
+export async function revokeVerifierDurable(
+  supabase: DurableDatabaseClient,
+  verifierId: string,
+  reason: string,
+  revokedBy?: string,
+): Promise<boolean> {
+  const normalized = verifierId.trim().toLowerCase();
+  const { data, error } = await supabase
+    .from("enrolled_verifiers")
+    .update({
+      status: "REVOKED",
+      revocation_reason: reason,
+      revoked_at: new Date().toISOString(),
+      revoked_by: revokedBy ?? null,
+    })
+    .eq("verifier_id", normalized)
+    .select();
+
+  if (error || !data || data.length === 0) {
+    return false;
+  }
+
+  revokeVerifier(normalized, reason);
+  return true;
+}
+
+/**
+ * Looks up an enrolled verifier durably from PostgreSQL / Supabase.
+ */
+export async function getEnrolledVerifierDurable(
+  supabase: DurableDatabaseClient | null | undefined,
+  verifierId: string,
+): Promise<EnrolledVerifier | undefined> {
+  const normalized = verifierId.trim().toLowerCase();
+  if (supabase) {
+    const { data } = await supabase
+      .from("enrolled_verifiers")
+      .select("*")
+      .eq("verifier_id", normalized)
+      .maybeSingle();
+
+    if (data) {
+      const verifier = mapDbRowToEnrolledVerifier(data);
+      ENROLLED_VERIFIER_REGISTRY.set(normalized, verifier);
+      return verifier;
+    }
+  }
+  return getEnrolledVerifier(normalized);
+}
+
 /**
  * Validates whether an authoritative verifier decision:
  * 1. Was issued by an enrolled, recognized auditor.
  * 2. Belongs to a verifier whose status is ACTIVE (fails closed if REVOKED or SUSPENDED).
- * 3. Authorizes the target ecosystem biome.
+ * 3. Accreditation certificate has not expired.
+ * 4. Authorizes the target ecosystem biome.
  */
 export function verifyAuthoritativeReviewerDecision(
   decision: AuthoritativeVerifierDecision | undefined,
   targetEcosystem?: Ecosystem,
+  options?: { asOfDate?: Date | undefined; resolvedVerifier?: EnrolledVerifier | undefined },
 ): {
   isValid: boolean;
   verifier?: EnrolledVerifier | undefined;
@@ -623,6 +775,7 @@ export function verifyAuthoritativeReviewerDecision(
     | "UNENROLLED_VERIFIER"
     | "VERIFIER_REVOKED"
     | "VERIFIER_INACTIVE"
+    | "ACCREDITATION_EXPIRED"
     | "UNAUTHORIZED_BIOME"
     | undefined;
   error?: string | undefined;
@@ -635,7 +788,9 @@ export function verifyAuthoritativeReviewerDecision(
     };
   }
 
-  const verifier = ENROLLED_VERIFIER_REGISTRY.get(decision.verifierId.trim().toLowerCase());
+  const verifier =
+    options?.resolvedVerifier ??
+    ENROLLED_VERIFIER_REGISTRY.get(decision.verifierId.trim().toLowerCase());
   if (!verifier) {
     return {
       isValid: false,
@@ -662,6 +817,19 @@ export function verifyAuthoritativeReviewerDecision(
     };
   }
 
+  const nowTime = options?.asOfDate ? options.asOfDate.getTime() : Date.now();
+  if (
+    verifier.accreditationExpiresAt &&
+    new Date(verifier.accreditationExpiresAt).getTime() <= nowTime
+  ) {
+    return {
+      isValid: false,
+      verifier,
+      errorCode: "ACCREDITATION_EXPIRED",
+      error: `ACCREDITATION_EXPIRED: Verifier '${verifier.verifierId}' accreditation expired on ${verifier.accreditationExpiresAt}.`,
+    };
+  }
+
   if (targetEcosystem && !verifier.authorizedBiomes.includes(targetEcosystem)) {
     return {
       isValid: false,
@@ -672,4 +840,40 @@ export function verifyAuthoritativeReviewerDecision(
   }
 
   return { isValid: true, verifier };
+}
+
+/**
+ * Durable version of verifyAuthoritativeReviewerDecision querying the persistent database trust registry.
+ */
+export async function verifyAuthoritativeReviewerDecisionDurable(
+  supabase: DurableDatabaseClient | null | undefined,
+  decision: AuthoritativeVerifierDecision | undefined,
+  targetEcosystem?: Ecosystem,
+  options?: { asOfDate?: Date | undefined },
+): Promise<{
+  isValid: boolean;
+  verifier?: EnrolledVerifier | undefined;
+  errorCode?:
+    | "MISSING_DECISION"
+    | "UNENROLLED_VERIFIER"
+    | "VERIFIER_REVOKED"
+    | "VERIFIER_INACTIVE"
+    | "ACCREDITATION_EXPIRED"
+    | "UNAUTHORIZED_BIOME"
+    | undefined;
+  error?: string | undefined;
+}> {
+  if (!decision) {
+    return {
+      isValid: false,
+      errorCode: "MISSING_DECISION",
+      error: "Missing authoritative verifier decision",
+    };
+  }
+
+  const durableVerifier = await getEnrolledVerifierDurable(supabase, decision.verifierId);
+  return verifyAuthoritativeReviewerDecision(decision, targetEcosystem, {
+    ...options,
+    resolvedVerifier: durableVerifier,
+  });
 }

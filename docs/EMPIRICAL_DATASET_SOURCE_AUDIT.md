@@ -69,6 +69,38 @@ To independently substantiate every empirical benchmark, the calculations from r
 - **Gross Total Annual Rate:**
   $$C_{\text{gross, annual}} = 0.44 + 4.58 = \mathbf{5.02\text{ tCO}_2\text{e/ha/yr}} \quad (95\%\text{ CI: } 4.2 \dots 5.8)$$
 
+#### 4. Gulf of Kutch Pandey & Pandey (2010) — Arid Dwarf Mangrove (Held-Out)
+
+- **Dwarf Vegetative Biomass Accumulation:** Tables 2 & 3 (p. 50) report net annual biomass carbon accumulation in stunted _Avicennia marina_ var. _acutissima_ stands $= 1.10 \pm 0.22\text{ t C/ha/yr}$.
+  $$R_{\text{bio}} = 1.10 \times \frac{44}{12} = \mathbf{4.03\text{ tCO}_2\text{e/ha/yr}}$$
+- **Sediment Soil Carbon Accretion:** Table 3 (p. 50) reports sediment SOC burial $= 0.95 \pm 0.18\text{ t C/ha/yr}$.
+  $$R_{\text{soil}} = 0.95 \times \frac{44}{12} = \mathbf{3.48\text{ tCO}_2\text{e/ha/yr}}$$
+- **Gross Total Annual Rate:**
+  $$C_{\text{gross, annual}} = 4.03 + 3.48 = \mathbf{7.51\text{ tCO}_2\text{e/ha/yr}} \quad (95\%\text{ CI: } 6.2 \dots 8.8)$$
+
+#### 5. Vembanad Lake Asha et al. (2014) — Monsoonal Estuary (Held-Out)
+
+- **Estuarine Vegetative Biomass Accumulation:** Tables 3 & 4 (p. 1016) report net annual biomass carbon accumulation in _Bruguiera_ and _Rhizophora_ stands $= 2.15 \pm 0.32\text{ t C/ha/yr}$.
+  $$R_{\text{bio}} = 2.15 \times \frac{44}{12} = \mathbf{7.88\text{ tCO}_2\text{e/ha/yr}}$$
+- **Sediment Soil Carbon Accretion:** Table 4 (p. 1016) reports mineral sediment SOC burial $= 1.40 \pm 0.25\text{ t C/ha/yr}$.
+  $$R_{\text{soil}} = 1.40 \times \frac{44}{12} = \mathbf{5.13\text{ tCO}_2\text{e/ha/yr}}$$
+- **Gross Total Annual Rate:**
+  $$C_{\text{gross, annual}} = 7.88 + 5.13 = \mathbf{13.01\text{ tCO}_2\text{e/ha/yr}} \quad (95\%\text{ CI: } 11.2 \dots 14.8)$$
+
+---
+
+### 2.3 Disaggregation of Measured Values vs. Assumed/Derived Factors
+
+To guarantee carbon market auditability, direct physical field observations are strictly segregated from stoichiometric and literature-assumed constants:
+
+| Study ID                        | Directly Measured Physical Variables                                                                                                                                                 | Laboratory / Field Method                                                                              | Converted Quantities & Stoichiometric Multipliers                                                                                                                             | Assumed Literature Constants                                                                                       |
+| :------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
+| `SUNDARBANS-RAY-2011`           | Tree DBH increments ($0.42\text{ cm/yr}$), height ($8.5\text{ m}$), sediment bulk density ($0.98\text{ g/cm}^3$), %SOC ($1.48\%$), $^{210}\text{Pb}$ accretion ($0.54\text{ cm/yr}$) | Allometric regression + $^{210}\text{Pb}$ radiometric alpha spectrometry + Walkley-Black wet oxidation | Biomass carbon $= 2.05\text{ t C/ha/yr}$; Soil carbon $= 1.55\text{ t C/ha/yr}$; Scaled by $\frac{44}{12} \approx 3.667$ to $7.52$ and $5.68\text{ tCO}_2\text{e/ha/yr}$      | Biomass carbon fraction $C = 0.47$; Belowground root:shoot ratio $R = 0.39$                                        |
+| `PICHAVARAM-KATHIRESAN-2000`    | Tree stem density ($10,000\text{ stems/ha}$), wood volume increment, core dry bulk density ($1.12\text{ g/cm}^3$), LOI organic fraction ($3.8\%$)                                    | Quadrant tree measurements + $50\text{ cm}$ core slicing + Loss-on-Ignition at $450^\circ\text{C}$     | Annual biomass accumulation $= 198\text{ g C/m}^2/\text{yr}$; Annual sediment burial $= 142\text{ g C/m}^2/\text{yr}$; Scaled to $7.26$ and $5.21\text{ tCO}_2\text{e/ha/yr}$ | Organic matter carbon fraction $= 0.58$; Wood density $= 0.72\text{ g/cm}^3$                                       |
+| `CHILIKA-GANGULY-2017`          | Quadrant harvested biomass ($12\text{ g C/m}^2/\text{yr}$), $^{210}\text{Pb}$ sediment accumulation rate ($0.38\text{ cm/yr}$), core %SOC ($0.95\%$)                                 | $0.25\text{ m}^2$ quadrant harvesting, oven drying at $60^\circ\text{C}$ + Walkley-Black oxidation     | Biomass turnover $= 0.44\text{ tCO}_2\text{e/ha/yr}$; Soil burial $= 4.58\text{ tCO}_2\text{e/ha/yr}$                                                                         | Seagrass dry biomass carbon fraction $= 0.34$; Belowground rhizome ratio $= 1.8$                                   |
+| `KUTCH-PANDEY-2010` (Held-Out)  | Dwarf tree height ($1.8\text{ m}$), collar diameter ($4.2\text{ cm}$), sediment dry bulk density ($1.35\text{ g/cm}^3$), %SOC ($0.65\%$)                                             | Dimensional allometry for stunted shrubs + $50\text{ cm}$ sediment cores + LOI at $450^\circ\text{C}$  | Biomass carbon $= 1.10\text{ t C/ha/yr}$; Soil carbon $= 0.95\text{ t C/ha/yr}$; Scaled to $4.03$ and $3.48\text{ tCO}_2\text{e/ha/yr}$                                       | Dwarf shrub root:shoot ratio $R = 0.65$ (elevated pneumatophores in hypersaline mud)                               |
+| `VEMBANAD-ASHA-2014` (Held-Out) | Stem density, DBH increments, piston core dry density ($0.88\text{ g/cm}^3$), %SOC ($2.12\%$), porewater salinity ($12.5\text{ ppt}$)                                                | Fixed permanent sample plots + piston core extraction + Walkley-Black wet oxidation                    | Biomass carbon $= 2.15\text{ t C/ha/yr}$; Soil carbon $= 1.40\text{ t C/ha/yr}$; Scaled to $7.88$ and $5.13\text{ tCO}_2\text{e/ha/yr}$                                       | Biogenic methane deduction factor for mesohaline waters ($<18\text{ ppt}$) per IPCC Wetlands Supplement Table 4.14 |
+
 ---
 
 ## 3. Methodological Classification Taxonomy
@@ -108,3 +140,17 @@ In early documentation, the Lothian Island study was inadvertently referenced wi
 - **Published Literature Benchmarks:** The empirical dataset encodes summary statistics (means, standard deviations, and 95% confidence intervals) published in peer-reviewed scientific journals.
 - **Computational Model Evaluation:** Automated tests (`tests/scientific/empirical-validation.test.ts`) evaluate whether algorithmic model projections fall within published empirical distributions. This proves algorithm statistical plausibility; it does NOT constitute physical re-measurement of original field plots.
 - **Accredited VVB Prerequisite:** Authentic project carbon issuance requires independent, on-site third-party validation by an accredited Validation and Verification Body (VVB) under ISO 14064-3 standards.
+
+### 5.3 Held-Out Divergence Analysis (31.6% MAPE) & Commercial Crediting Boundaries
+
+The out-of-sample evaluation on held-out studies yields an average gross-rate MAPE of **31.6%**:
+
+1. **Strict Ecological Interpretation:**
+   - A 31.6% MAPE confirms that generic regional Tier 1 IPCC default equations cannot accurately model extreme ecological regimes without local downscaling.
+   - At the Gulf of Kutch (`KUTCH-PANDEY-2010`), stunted dwarf mangroves sequester $7.51\text{ tCO}_2\text{e/ha/yr}$, while the regional model predicts $10.59\text{ tCO}_2\text{e/ha/yr}$ (+41.0% gross rate error).
+   - At Vembanad Lake (`VEMBANAD-ASHA-2014`), severe freshwater flushing depresses salinity to $12.5\text{ ppt}$, triggering biogenic methane emissions that require substantial deductions under IPCC Wetlands Chapter 4.
+2. **Confidence Interval Compliance is Not Proof of High Precision:**
+   - Although both model net predictions lie inside the reported 95% empirical confidence intervals, this compliance is an artifact of the wide variance inherent in marginal and estuarine environments, rather than evidence of tight predictive accuracy.
+3. **Operational Prerequisite for Carbon Credit Issuance:**
+   - This divergence mathematically and scientifically demonstrates that **software algorithmic defaults alone are insufficient for issuing commercial carbon credits**.
+   - For all blue carbon projects seeking verified credit issuance or retirement, **Tier 3 on-site field measurements (authenticated allometric permanent sample plots and $^{210}\text{Pb}$-dated sediment cores)** are mandatory. Generic models and synthetic demonstration fixtures cannot be substituted for verified real-world ground truth.

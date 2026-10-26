@@ -5,7 +5,13 @@ import { ArrowLeft, Building2, Leaf, MapPin, Ruler } from "lucide-react";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { CarbonDisclaimer, DemoDataTag } from "@/components/CarbonDisclaimer";
+import {
+  CarbonDisclaimer,
+  DemoDataTag,
+  isSyntheticFixture,
+  SyntheticFixtureBadge,
+  SyntheticFixtureBanner,
+} from "@/components/CarbonDisclaimer";
 import { BlockchainPanel } from "@/components/BlockchainPanel";
 import { TimelinePanel } from "@/components/TimelinePanel";
 import { QrVerificationPanel } from "@/components/QrVerificationPanel";
@@ -78,6 +84,7 @@ function PublicVerifyPage() {
   }
 
   const { project, blockchain, timeline } = data;
+  const isSynthetic = isSyntheticFixture(project.project_code) || isSyntheticFixture(project.name);
   const markers =
     project.latitude != null && project.longitude != null
       ? [
@@ -108,17 +115,29 @@ function PublicVerifyPage() {
 
         <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal">
-              Public verification record
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal">
+                Public verification record
+              </p>
+              {isSynthetic ? <SyntheticFixtureBadge /> : null}
+            </div>
             <h1 className="mt-1 font-display text-3xl font-semibold">{project.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {project.project_code}
               {project.organization ? ` · ${project.organization}` : ""}
             </p>
           </div>
-          <StatusBadge status={project.status as ProjectStatus} />
+          <div className="flex flex-col items-end gap-1.5">
+            <StatusBadge status={project.status as ProjectStatus} />
+            {isSynthetic ? (
+              <span className="rounded bg-amber-500/15 px-2 py-0.5 font-mono text-[0.65rem] font-bold text-amber-700 dark:text-amber-400">
+                SYNTHETIC_DEMONSTRATION_FIXTURE
+              </span>
+            ) : null}
+          </div>
         </div>
+
+        {isSynthetic ? <SyntheticFixtureBanner className="mt-4" /> : null}
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard

@@ -79,3 +79,59 @@ test("Telemetry Crypto: Verifies drone aerial survey telemetry and raster hashes
   assert.strictEqual(digest1, digest2);
   assert.strictEqual(digest1.length, 64);
 });
+
+test("Telemetry Crypto: Rejects telemetry from sensors with expired calibration certificates", async () => {
+  const { enrollSensorDevice, verifyEnrolledSensorTelemetry } =
+    await import("../../src/lib/telemetry-crypto.server.ts");
+
+  const wallet = ethers.Wallet.createRandom();
+  const expiredDevice = enrollSensorDevice({
+    deviceId: "YSI-EXPIRED-TEST-01",
+    deviceModel: "EXO2 Sonde",
+    manufacturer: "YSI",
+    projectCode: "PRJ-LOTH-2024",
+    signerAddress: wallet.address,
+    organization: "NCCR Field Lab",
+    calibrationCertificate: "CAL-EXPIRED-2023",
+    calibrationExpiresAt: "2023-01-01T00:00:00Z", // Expired in past
+  });
+
+  const payload: Record<string, unknown> = {
+    device_id: expiredDevice.deviceId,
+    timestamp: "2026-10-21T12:00:00.000Z",
+    salinityPpt: 28.5,
+  };
+
+  const { signature } = await signTelemetryPayload(payload, wallet.privateKey);
+
+  const result = verifyEnrolledSensorTelemetry(payload, signature, "PRJ-LOTH-2024");
+  assert.strictEqual(result.isValid, false);
+  assert.strictEqual(result.errorCode, "CALIBRATION_EXPIRED");
+  assert.ok(result.error?.includes("CALIBRATION_EXPIRED"));
+});
+
+test("Authoritative Verifier: Rejects verifier decision when accreditation certificate is expired", async () => {
+  const { enrollVerifier, verifyAuthoritativeReviewerDecision } =
+    await import("../../src/lib/carbon-methodology.ts");
+
+  const expiredVerifier = enrollVerifier({
+    verifierId: "auditor-expired-accreditation",
+    organization: "Global Carbon Auditing Ltd",
+    accreditationNumber: "VVB-EXPIRED-2022",
+    accreditationExpiresAt: "2022-12-31T23:59:59Z", // Expired in past
+    authorizedBiomes: ["MANGROVE"],
+  });
+
+  const decision = {
+    decisionId: "dec-test-expired",
+    verifierId: expiredVerifier.verifierId,
+    decision: "APPROVED" as const,
+    decisionTimestamp: new Date().toISOString(),
+    contentHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  };
+
+  const check = verifyAuthoritativeReviewerDecision(decision, "MANGROVE");
+  assert.strictEqual(check.isValid, false);
+  assert.strictEqual(check.errorCode, "ACCREDITATION_EXPIRED");
+  assert.ok(check.error?.includes("ACCREDITATION_EXPIRED"));
+});

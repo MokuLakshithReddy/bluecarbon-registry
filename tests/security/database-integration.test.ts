@@ -110,6 +110,7 @@ async function initTestDatabase() {
     GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated, service_role;
     GRANT SELECT ON public.projects TO anon;
     GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
+    GRANT ALL ON ALL TABLES IN SCHEMA auth TO service_role;
     GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth TO anon, authenticated, service_role;
   `);
 
@@ -759,5 +760,117 @@ test("DB Integration: Durable shared SIWE nonces and KYC cumulative ledger preve
     BigInt(cumAfterOldRes.rows[0].vol),
     900000n,
     "Expired rolling window transaction is excluded",
+  );
+});
+
+test("DB Integration: Durable sensor and verifier trust registries enforce RLS, persistence, and audit logging", async () => {
+  const db = await initTestDatabase();
+
+  // 1. Verify pre-seeded reference records exist
+  const sensorRes = await db.query(
+    `SELECT * FROM public.enrolled_sensor_devices WHERE device_id = 'YSI-EXO2-LOTHIAN-JETTY-01';`,
+  );
+  assert.strictEqual(sensorRes.rows.length, 1, "Default sensor is pre-seeded");
+  assert.strictEqual(sensorRes.rows[0].status, "ACTIVE");
+
+  const verifierRes = await db.query(
+    `SELECT * FROM public.enrolled_verifiers WHERE verifier_id = 'nccr-auditor-dr-das';`,
+  );
+  assert.strictEqual(verifierRes.rows.length, 1, "Default verifier is pre-seeded");
+  assert.strictEqual(verifierRes.rows[0].status, "ACTIVE");
+
+  // 2. Setup users in auth.users under service_role
+  const regularUserId = "11111111-1111-1111-1111-111111111111";
+  const adminUserId = "22222222-2222-2222-2222-222222222222";
+  await setSessionContext(db, "service_role");
+  await db.query(`
+    INSERT INTO auth.users (id, email) VALUES ('${regularUserId}', 'user@test.org')
+    ON CONFLICT (id) DO NOTHING;
+  `);
+  await db.query(`
+    INSERT INTO auth.users (id, email) VALUES ('${adminUserId}', 'admin@registry.org')
+    ON CONFLICT (id) DO NOTHING;
+  `);
+  await db.query(`
+    INSERT INTO public.user_roles (user_id, role) VALUES ('${adminUserId}', 'admin')
+    ON CONFLICT (user_id, role) DO NOTHING;
+  `);
+
+  // 3. RLS blocks ordinary authenticated user from inserting a sensor device
+  await setSessionContext(db, "authenticated", regularUserId);
+
+  await assert.rejects(
+    async () => {
+      await db.query(`
+        INSERT INTO public.enrolled_sensor_devices (
+          device_id, signer_address, device_model, manufacturer, project_code, organization,
+          calibration_certificate, calibration_expires_at, status
+        ) VALUES (
+          'UNAUTHORIZED-SENSOR-01', '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'Sonde', 'TestCorp',
+          'PRJ-TEST', 'Org', 'CAL-999', now() + interval '1 year', 'ACTIVE'
+        );
+      `);
+    },
+    /permission denied|violates row-level security policy/i,
+    "Ordinary authenticated user cannot enroll a sensor device",
+  );
+
+  // 4. Admin user can enroll a new sensor device and trigger automatically appends audit log
+  await setSessionContext(db, "authenticated", adminUserId);
+  const newSigner = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  await db.query(`
+    INSERT INTO public.enrolled_sensor_devices (
+      device_id, signer_address, device_model, manufacturer, project_code, organization,
+      calibration_certificate, calibration_expires_at, status, enrolled_by
+    ) VALUES (
+      'AUTHORIZED-SENSOR-02', '${newSigner}', 'Sonde X', 'SensTech',
+      'PRJ-LOTH-2024', 'NCCR Marine', 'CAL-2026-001', now() + interval '2 years', 'ACTIVE', '${adminUserId}'
+    );
+  `);
+
+  // Verify enrollment audit record was created via trigger
+  const auditRes = await db.query(
+    `SELECT * FROM public.enrollment_audit_log WHERE entity_id = 'AUTHORIZED-SENSOR-02';`,
+  );
+  assert.strictEqual(auditRes.rows.length, 1, "Audit record generated for enrollment");
+  assert.strictEqual(auditRes.rows[0].action, "ENROLLED");
+  assert.strictEqual(auditRes.rows[0].new_status, "ACTIVE");
+
+  // 5. Revocation updates device status and appends audit log
+  await db.query(`
+    UPDATE public.enrolled_sensor_devices
+    SET status = 'REVOKED',
+        revoked_at = now(),
+        revocation_reason = 'Hardware calibration failure during field audit',
+        revoked_by = '${adminUserId}'
+    WHERE device_id = 'AUTHORIZED-SENSOR-02';
+  `);
+
+  const auditRevokedRes = await db.query(
+    `SELECT * FROM public.enrollment_audit_log WHERE entity_id = 'AUTHORIZED-SENSOR-02' AND action = 'REVOKED';`,
+  );
+  assert.strictEqual(auditRevokedRes.rows.length, 1, "Audit record generated for revocation");
+  assert.strictEqual(
+    auditRevokedRes.rows[0].reason,
+    "Hardware calibration failure during field audit",
+  );
+
+  // 6. Audit log is immutable:
+  // Under authenticated role, RLS policy blocks delete (0 rows deleted)
+  const delRes = await db.query(`DELETE FROM public.enrollment_audit_log;`);
+  assert.strictEqual(
+    delRes.affectedRows ?? (delRes as { rowCount?: number }).rowCount ?? 0,
+    0,
+    "RLS blocks deletion of audit log entries for clients",
+  );
+
+  // Under service_role, the immutability trigger fires and aborts with fatal error
+  await setSessionContext(db, "service_role");
+  await assert.rejects(
+    async () => {
+      await db.query(`DELETE FROM public.enrollment_audit_log;`);
+    },
+    /strictly immutable/i,
+    "Audit log entries cannot be deleted even by service_role",
   );
 });

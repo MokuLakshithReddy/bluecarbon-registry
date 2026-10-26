@@ -6,19 +6,24 @@
 
 ---
 
-## 1. Architectural Distinction: Local EVM vs Deployed Staging Chain
+## 1. Architectural Distinction: Local EVM vs Wire Simulation vs Live Staging Testnet
 
-To ensure zero ambiguity during security audits and compliance certification, this repository establishes a strict separation between in-process EVM simulation and live staging network transactions:
+To ensure zero ambiguity during security audits and compliance certification, this repository establishes a strict three-tier separation between in-process EVM simulation, local JSON-RPC wire simulation, and live staging testnet transactions:
 
-| Dimension                  | Local In-Process EVM (`npm run test:evm`)                                  | Deployed Staging Network (`npm run test:staging`)                                                          |
-| :------------------------- | :------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------- |
-| **Execution Engine**       | In-memory `@ethereumjs/vm` running inside the Node.js test process.        | Real EVM node communicating over HTTP JSON-RPC 2.0 wire protocol.                                          |
-| **Network & Transport**    | None. Direct opcode interpretation without sockets or HTTP serialization.  | HTTP POST calls (`eth_sendRawTransaction`, `eth_getTransactionReceipt`, `eth_call`).                       |
-| **State Persistence**      | Ephemeral. State ceases to exist when the Node.js test process terminates. | Persistent. State lives in the staging blockchain ledger across all nodes.                                 |
-| **Transaction Receipts**   | Synthetic in-memory transaction result objects.                            | Externally observable receipts with block hash, block number, cumulative gas used, and logs bloom.         |
-| **Mempool & Gas Dynamics** | Zero gas fees, instantaneous synthetic block creation.                     | Real base fees, priority tips, nonce management, and replacement transaction handling.                     |
-| **Confirmation Depth**     | Immediate execution (1 synthetic block).                                   | Multi-block confirmation polling (minimum 2 blocks on staging, 12 on mainnet).                             |
-| **Verification Purpose**   | Fast unit testing of Solidity bytecode logic and opcode correctness.       | Integration testing of wire protocol serialization, network resilience, receipt parsing, and RPC failover. |
+| Dimension                | Tier 1: Local In-Process EVM (`npm run test:evm`) | Tier 2: Staging RPC-Wire Simulation (`npm run test:staging`) | Tier 3: Live Staging Testnet (`npm run test:staging:live`)                                                 |
+| :----------------------- | :------------------------------------------------ | :----------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------- |
+| **Execution Engine**     | In-memory `@ethereumjs/vm` in Node.js process.    | Node.js HTTP JSON-RPC 2.0 wire node on `127.0.0.1`.          | External Ethereum Sepolia or Polygon Amoy validator node.                                                  |
+| **Network & Transport**  | None. Direct in-process EVM opcode execution.     | HTTP JSON-RPC 2.0 wire serialization over localhost.         | Real Internet HTTPS JSON-RPC 2.0 wire protocol over WAN.                                                   |
+| **State Persistence**    | Ephemeral (destroyed upon test exit).             | Ephemeral per-test run.                                      | **Persistent public testnet ledger** across all nodes.                                                     |
+| **Transaction Receipts** | Synthetic in-memory result objects.               | Synthetic wire receipts conforming to EIP-155 / EIP-1559.    | **Real externally observable receipts** mined by network miners.                                           |
+| **Gas & Mempool**        | Zero gas fees, immediate block execution.         | Simulated gas usage and priority fee calculations.           | **Real testnet gas consumption**, base fees, and priority tips.                                            |
+| **Key & Safety Guard**   | Dummy in-memory testing key.                      | Hard-coded simulation dummy key (`0x0123...`).               | **Funded testnet private key from secret environment variable**. Built-in safety guard rejects dummy keys. |
+| **CI / Automated Gate**  | Mandatory blocking check on every PR.             | Mandatory blocking check in CI without credentials.          | **Opt-in integration gate** enabled via `STAGING_RPC_URL` secrets.                                         |
+
+> [!CAUTION]
+> **Simulation Key Safety Guard:**
+> The hard-coded private key `0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef` is strictly reserved for local RPC-wire simulation.
+> The codebase enforces an automated runtime guard (`assertSafeStagingConfiguration`): any attempt to supply this dummy key to a non-localhost RPC endpoint throws a fatal security exception immediately, preventing accidental loss of funds or testnet pollution.
 
 ---
 
