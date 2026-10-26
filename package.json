@@ -24,6 +24,7 @@
     "validate:db": "node --experimental-strip-types scripts/validate-live-db.ts",
     "reconcile:state": "node --experimental-strip-types scripts/disaster-recovery-reconcile.ts",
     "smoke:test": "node --experimental-strip-types scripts/smoke-test.ts",
+    "report:scientific": "node --experimental-strip-types scripts/generate-scientific-validation-report.ts",
     "test:evm": "node --experimental-strip-types tests/blockchain/contract-solidity.test.ts"
   },
   "dependencies": {

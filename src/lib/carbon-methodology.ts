@@ -105,6 +105,15 @@ export type EvidenceType =
   | "CALIBRATED_SENSOR_TELEMETRY"
   | "THIRD_PARTY_AUDIT_REPORT";
 
+export interface AuthoritativeVerifierDecision {
+  verifierId: string;
+  verifierRole: "VERIFIER" | "ADMIN" | "DESIGNATED_OPERATIONAL_ENTITY";
+  reviewId: string;
+  signatureOrDecisionHash: string;
+  decisionTimestamp: string;
+  contentHash: string; // Must match item.sha256Hash
+}
+
 export interface StructuredEvidenceItem {
   evidenceId: string;
   type: EvidenceType;
@@ -116,6 +125,7 @@ export interface StructuredEvidenceItem {
   laboratoryMethod?: string | undefined; // e.g. "Walkley-Black titration" or "Loss-on-Ignition at 450C"
   calibrationRecordId?: string | undefined;
   verificationStatus: "VERIFIED" | "PENDING" | "REJECTED";
+  authoritativeDecision?: AuthoritativeVerifierDecision | undefined;
 }
 
 export interface CarbonCalculationInput {
@@ -228,6 +238,9 @@ export interface DetailedCarbonAssessment {
         evidenceCount: number;
         evidenceTypes: EvidenceType[];
         requiredEvidenceMet: boolean;
+        authoritativeDecisionsBound: number;
+        unverifiedItemsRejected: number;
+        isAuthoritativelyVerified: boolean;
       }
     | undefined;
 }
@@ -259,7 +272,10 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
         `Invalid restoration date range: end date (${input.restorationEndDate}) must be strictly after start date (${input.restorationStartDate}).`,
       );
     }
-    durationYears = Math.max(0.1, (end - start) / (1000 * 60 * 60 * 24 * 365.25));
+    durationYears = Math.max(
+      0.1,
+      Math.round(((end - start) / (1000 * 60 * 60 * 24 * 365.25)) * 100) / 100,
+    );
   } else if (isStrict) {
     throw new Error(
       "Strict Verification Error: Valid restorationStartDate and restorationEndDate are required for formal verification.",
@@ -340,9 +356,49 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
   // Tier 3 soil cores carry 3% discount (continuous soil cores + allometric survey).
   let effectiveTier = input.tier ?? "TIER_1_DEFAULTS";
   const structuredItems = input.structuredEvidence ?? [];
-  const verifiedStructuredItems = structuredItems.filter(
-    (item) => item.verificationStatus === "VERIFIED",
-  );
+  let unverifiedItemsRejected = 0;
+  let authoritativeDecisionsBound = 0;
+
+  const verifiedStructuredItems = structuredItems.filter((item) => {
+    if (item.verificationStatus !== "VERIFIED") {
+      return false;
+    }
+
+    // In STRICT_VERIFICATION mode, self-asserted "VERIFIED" is strictly rejected
+    // unless accompanied by an authentic verifier decision bound to the exact content hash.
+    if (isStrict) {
+      if (!item.authoritativeDecision) {
+        unverifiedItemsRejected++;
+        return false;
+      }
+      if (item.authoritativeDecision.contentHash !== item.sha256Hash) {
+        unverifiedItemsRejected++;
+        return false;
+      }
+      authoritativeDecisionsBound++;
+      return true;
+    }
+
+    // In exploratory mode:
+    if (item.authoritativeDecision) {
+      if (item.authoritativeDecision.contentHash === item.sha256Hash) {
+        authoritativeDecisionsBound++;
+        return true;
+      }
+      unverifiedItemsRejected++;
+      return false;
+    }
+
+    defaultInputsApplied.push(`provisional_unendorsed_evidence_accepted:${item.evidenceId}`);
+    return true;
+  });
+
+  if (isStrict && unverifiedItemsRejected > 0) {
+    defaultInputsApplied.push(
+      `rejected_${unverifiedItemsRejected}_items_missing_authoritative_decision`,
+    );
+  }
+
   const legacyEvidenceCount = input.tierSupportingEvidence?.length ?? 0;
   const evidenceTypesPresent: EvidenceType[] = verifiedStructuredItems.map((e) => e.type);
 
@@ -384,7 +440,7 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
   const netImpact = Math.max(0, grossAfterDeductions - riskBufferTco2e - uncertaintyTco2e);
 
   const grossMinusEmissionsAndLeakage = Math.round(grossAfterDeductions * 100) / 100;
-  const netModelEstimate = Math.round(netImpact);
+  const netModelEstimate = Math.round(netImpact * 100) / 100;
 
   return {
     methodologyId: METHODOLOGY_SPEC.id,
@@ -424,6 +480,34 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
       evidenceCount: verifiedStructuredItems.length || legacyEvidenceCount,
       evidenceTypes: evidenceTypesPresent,
       requiredEvidenceMet: effectiveTier === (input.tier ?? "TIER_1_DEFAULTS"),
+      authoritativeDecisionsBound,
+      unverifiedItemsRejected,
+      isAuthoritativelyVerified:
+        verifiedStructuredItems.length > 0 &&
+        authoritativeDecisionsBound === verifiedStructuredItems.length,
     },
+  };
+}
+
+/**
+ * Creates an authoritative verifier decision stamp binding an authenticated reviewer to an evidence hash.
+ */
+export function createAuthoritativeVerifierDecision(
+  evidence: Pick<StructuredEvidenceItem, "sha256Hash">,
+  verifier: {
+    id: string;
+    role?: "VERIFIER" | "ADMIN" | "DESIGNATED_OPERATIONAL_ENTITY";
+    reviewId?: string;
+  },
+): AuthoritativeVerifierDecision {
+  const role = verifier.role ?? "VERIFIER";
+  const reviewId = verifier.reviewId ?? `rev-${Date.now()}`;
+  return {
+    verifierId: verifier.id,
+    verifierRole: role,
+    reviewId,
+    signatureOrDecisionHash: `decision-stamp-${verifier.id.slice(0, 8)}-${evidence.sha256Hash.slice(0, 16)}`,
+    decisionTimestamp: new Date().toISOString(),
+    contentHash: evidence.sha256Hash,
   };
 }

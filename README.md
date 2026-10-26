@@ -2,7 +2,7 @@
 
 [![CI Pipeline](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml)
 [![Branch Protection](https://img.shields.io/badge/branch%20protection-main%20enforced-success)](https://github.com/MokuLakshithReddy/bluecarbon-registry/branches)
-[![Tests Passing](https://img.shields.io/badge/tests-176%20passed-brightgreen)](tests)
+[![Tests Passing](https://img.shields.io/badge/tests-180%20passed-brightgreen)](tests)
 ![Node.js Version](https://img.shields.io/badge/node.js-%E2%89%A5%2022.0.0-brightgreen)
 ![TypeScript](https://img.shields.io/badge/typescript-v5.8-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-prettier-ff69b4)
@@ -175,6 +175,9 @@ Deep-dive architecture specifications, security reviews, and operational runbook
 
 - 📖 [**Carbon Methodology Specification**](./docs/CARBON_METHODOLOGY_SPEC.md) — IPCC Wetlands Supplement 2013 equations, biomass/soil factors, methane deduction rules, and Tier 1/2/3 evidence requirements.
 - 🔬 [**Reference Research Project Case**](./docs/REFERENCE_RESEARCH_PROJECT_CASE.md) — End-to-end reproducible research case (Sundarbans Lothian Island) with raw observations, soil core assays, telemetry, and mathematical derivation.
+- 📊 [**Empirical Dataset Source Audit**](./docs/EMPIRICAL_DATASET_SOURCE_AUDIT.md) — Line-item audit mapping every observation to original peer-reviewed literature, table/page, raw units, and conversion formulas.
+- 📈 [**Scientific Validation Report**](./docs/SCIENTIFIC_VALIDATION_REPORT.md) — Reproducible model accuracy report evaluating predictions against published 95% confidence intervals and residual errors.
+- 🧑‍🔬 [**External Scientific Review Dossier**](./docs/EXTERNAL_SCIENTIFIC_REVIEW_DOSSIER.md) — Methodological evaluation dossier and questionnaire for independent blue-carbon scientists and VVB auditors.
 - 🚀 [**Deployment and Rollback Protocol**](./docs/DEPLOYMENT_AND_ROLLBACK.md) — Production deployment instructions, environment readiness checks, migration procedures, and zero-downtime rollback runbooks.
 - 🚑 [**Disaster Recovery Runbook**](./docs/DISASTER_RECOVERY.md) — Outbox worker recovery, stranded job reconciliation, state synchronization, and emergency blockchain reconciliation procedures.
 - 📜 [**MRV Standards Alignment**](./docs/MRV_STANDARDS_ALIGNMENT.md) — Compliance alignment with Verra VM0033/VM0007, Plan Vivo, and ISO 14064-2 monitoring standards.

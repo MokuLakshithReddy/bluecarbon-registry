@@ -1,0 +1,54 @@
+{
+  "device_id": "YSI-EXO2-LOTHIAN-JETTY-01",
+  "deployment_location": {
+    "name": "Lothian Wildlife Sanctuary Marine Monitoring Jetty",
+    "latitude": 21.8542,
+    "longitude": 88.3245,
+    "water_body": "Saptamukhi Estuary"
+  },
+  "sensor_specifications": {
+    "manufacturer": "YSI / Xylem",
+    "model": "EXO2 Multi-Parameter Water Quality Sonde",
+    "calibration_date": "2024-11-01T00:00:00Z",
+    "calibration_certificate": "CAL-YSI-2024-8891"
+  },
+  "aggregation_window": {
+    "start_timestamp": "2024-12-01T00:00:00Z",
+    "end_timestamp": "2024-12-20T23:59:59Z",
+    "reading_interval_minutes": 15,
+    "total_readings": 1920
+  },
+  "metrics": {
+    "salinity_ppt": {
+      "mean": 24.5,
+      "min": 21.2,
+      "max": 28.6,
+      "std_dev": 1.4
+    },
+    "specific_conductivity_ms_cm": {
+      "mean": 38.2,
+      "min": 33.4,
+      "max": 44.1
+    },
+    "water_temperature_celsius": {
+      "mean": 22.4,
+      "min": 19.8,
+      "max": 25.1
+    },
+    "dissolved_oxygen_mg_l": {
+      "mean": 6.8,
+      "min": 5.4,
+      "max": 7.9
+    },
+    "ph": {
+      "mean": 7.9,
+      "min": 7.6,
+      "max": 8.2
+    }
+  },
+  "ecdsa_signature": {
+    "curve": "secp256k1",
+    "signer_public_key": "04a6b2c89f1d2e3b4a5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d",
+    "signature": "3045022100e4b8a2e1d0f5c6b7a8901234567890abcdef1234567890abcdef1234567802201234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+  }
+}

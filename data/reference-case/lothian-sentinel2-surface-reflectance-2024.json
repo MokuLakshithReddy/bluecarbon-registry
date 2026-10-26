@@ -1,0 +1,34 @@
+{
+  "product_id": "S2A_MSIL2A_20241210T044711_N0511_R076_T45QXF_20241210T075231",
+  "satellite": "Sentinel-2A",
+  "instrument": "MSI",
+  "processing_level": "Level-2A (Bottom of Atmosphere Reflectance)",
+  "sensing_time": "2024-12-10T04:47:11.024Z",
+  "target_region": "Lothian Island Wildlife Sanctuary",
+  "cloud_cover_percentage": 1.24,
+  "bounding_box_wgs84": {
+    "min_longitude": 88.318,
+    "min_latitude": 21.848,
+    "max_longitude": 88.332,
+    "max_latitude": 21.86
+  },
+  "spectral_bands": {
+    "B02_blue_central_nm": 490,
+    "B03_green_central_nm": 560,
+    "B04_red_central_nm": 665,
+    "B08_nir_central_nm": 842
+  },
+  "vegetation_indices_summary": {
+    "ndvi_mean": 0.742,
+    "ndvi_std_dev": 0.041,
+    "ndvi_min": 0.612,
+    "ndvi_max": 0.835,
+    "evi_mean": 0.584,
+    "ndwi_mean": -0.312
+  },
+  "qc_flags": {
+    "cloud_mask_applied": true,
+    "water_mask_applied": true,
+    "atmospheric_correction": "Sen2Cor v2.11"
+  }
+}

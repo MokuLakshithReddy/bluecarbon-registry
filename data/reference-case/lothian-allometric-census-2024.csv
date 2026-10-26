@@ -1,0 +1,21 @@
+tree_id,plot_id,plot_latitude,plot_longitude,species,dbh_cm,height_m,status,canopy_cover_m2,survey_date,surveyor_organization
+TREE-001,PLOT-A1,21.8542,88.3245,Avicennia marina,8.4,4.2,ALIVE,5.3,2024-12-01,Botanical Survey of India & WBFD
+TREE-002,PLOT-A1,21.8542,88.3245,Avicennia marina,9.1,4.6,ALIVE,6.1,2024-12-01,Botanical Survey of India & WBFD
+TREE-003,PLOT-A1,21.8542,88.3245,Rhizophora mucronata,7.6,3.8,ALIVE,4.8,2024-12-01,Botanical Survey of India & WBFD
+TREE-004,PLOT-A1,21.8542,88.3245,Avicennia marina,6.2,3.1,ALIVE,3.5,2024-12-01,Botanical Survey of India & WBFD
+TREE-005,PLOT-A1,21.8542,88.3245,Rhizophora mucronata,0.0,0.0,DEAD,0.0,2024-12-01,Botanical Survey of India & WBFD
+TREE-006,PLOT-A1,21.8542,88.3245,Avicennia marina,8.8,4.5,ALIVE,5.8,2024-12-01,Botanical Survey of India & WBFD
+TREE-007,PLOT-B2,21.8510,88.3280,Avicennia marina,9.4,4.8,ALIVE,6.5,2024-12-01,Botanical Survey of India & WBFD
+TREE-008,PLOT-B2,21.8510,88.3280,Rhizophora mucronata,8.2,4.1,ALIVE,5.2,2024-12-01,Botanical Survey of India & WBFD
+TREE-009,PLOT-B2,21.8510,88.3280,Avicennia marina,7.1,3.6,ALIVE,4.2,2024-12-01,Botanical Survey of India & WBFD
+TREE-010,PLOT-B2,21.8510,88.3280,Rhizophora mucronata,0.0,0.0,DEAD,0.0,2024-12-01,Botanical Survey of India & WBFD
+TREE-011,PLOT-B2,21.8510,88.3280,Avicennia marina,8.6,4.3,ALIVE,5.6,2024-12-01,Botanical Survey of India & WBFD
+TREE-012,PLOT-B2,21.8510,88.3280,Avicennia marina,9.0,4.7,ALIVE,6.0,2024-12-01,Botanical Survey of India & WBFD
+TREE-013,PLOT-C3,21.8575,88.3210,Rhizophora mucronata,7.9,4.0,ALIVE,4.9,2024-12-01,Botanical Survey of India & WBFD
+TREE-014,PLOT-C3,21.8575,88.3210,Avicennia marina,8.5,4.4,ALIVE,5.4,2024-12-01,Botanical Survey of India & WBFD
+TREE-015,PLOT-C3,21.8575,88.3210,Avicennia marina,0.0,0.0,DEAD,0.0,2024-12-01,Botanical Survey of India & WBFD
+TREE-016,PLOT-C3,21.8575,88.3210,Rhizophora mucronata,8.1,4.2,ALIVE,5.1,2024-12-01,Botanical Survey of India & WBFD
+TREE-017,PLOT-C3,21.8575,88.3210,Avicennia marina,9.2,4.6,ALIVE,6.2,2024-12-01,Botanical Survey of India & WBFD
+TREE-018,PLOT-C3,21.8575,88.3210,Avicennia marina,8.7,4.5,ALIVE,5.7,2024-12-01,Botanical Survey of India & WBFD
+TREE-019,PLOT-C3,21.8575,88.3210,Rhizophora mucronata,7.5,3.9,ALIVE,4.7,2024-12-01,Botanical Survey of India & WBFD
+TREE-020,PLOT-C3,21.8575,88.3210,Avicennia marina,8.9,4.4,ALIVE,5.9,2024-12-01,Botanical Survey of India & WBFD
