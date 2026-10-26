@@ -28,6 +28,9 @@ const REQUIRED_TABLES = [
   "blockchain_outbox",
   "user_roles",
   "audit_logs",
+  "enrolled_sensor_devices",
+  "enrolled_verifiers",
+  "enrollment_audit_log",
 ];
 
 const REQUIRED_RPCS = [

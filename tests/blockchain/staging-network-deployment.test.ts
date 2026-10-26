@@ -6,6 +6,10 @@ import {
   createRealEvmProvider,
   validateEVMNetworkAndContract,
   BLUE_CARBON_REGISTRY_ABI,
+  SIMULATION_DUMMY_KEY,
+  isApprovedLoopbackHost,
+  isLoopbackRpcUrl,
+  assertSafeStagingConfiguration,
   type AnchorPayload,
   type EvmConfig,
 } from "../../src/lib/blockchain.server.ts";
@@ -15,26 +19,9 @@ const iface = new ethers.Interface(BLUE_CARBON_REGISTRY_ABI);
 // Test fixtures for simulation wire protocol
 const STAGING_CHAIN_ID = 11155111; // Ethereum Sepolia Staging Testnet
 const STAGING_CONTRACT_ADDRESS = "0x7777777777777777777777777777777777777777";
-const SIMULATION_DUMMY_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const SIMULATION_DEPLOYER_ADDRESS = new ethers.Wallet(SIMULATION_DUMMY_KEY).address;
 
-/**
- * Asserts that the simulation dummy key is never accidentally supplied to a live remote network.
- */
-export function assertSafeStagingConfiguration(cfg: EvmConfig): void {
-  const isLocalhost =
-    cfg.rpcUrl.includes("127.0.0.1") ||
-    cfg.rpcUrl.includes("localhost") ||
-    cfg.rpcUrl.startsWith("http://127.0.0.1");
-
-  const isSimulationDummyKey = cfg.privateKey?.toLowerCase() === SIMULATION_DUMMY_KEY.toLowerCase();
-
-  if (!isLocalhost && isSimulationDummyKey) {
-    throw new Error(
-      "SECURITY FATAL: The hard-coded simulation key (0x0123...) must NEVER be used on live networks. Provide a dedicated funded testnet private key via STAGING_PRIVATE_KEY.",
-    );
-  }
-}
+export { assertSafeStagingConfiguration };
 
 interface StagingRpcServerOptions {
   receiptStatus?: "0x1" | "0x0";
@@ -239,6 +226,70 @@ test("Staging Safety Guard: Rejects simulation dummy private key on live remote 
     /SECURITY FATAL: The hard-coded simulation key/,
     "Must throw fatal security error if simulation key is configured on remote RPC",
   );
+});
+
+test("Staging Safety Guard: Rejects spoofed remote hosts containing loopback keywords in path, query, or subdomains", () => {
+  const testBypassUrls = [
+    "https://attacker.example/localhost",
+    "https://attacker.example/127.0.0.1",
+    "https://attacker.example/api/v1/localhost/rpc",
+    "https://attacker.example/?rpc=127.0.0.1",
+    "https://attacker.example/?target=localhost",
+    "https://attacker.example/#127.0.0.1",
+    "https://localhost.attacker.example:8545",
+    "https://127.0.0.1.attacker.example:8545",
+    "https://attacker.example:[::1]",
+    "ftp://127.0.0.1:8545",
+    "not-a-valid-url-format",
+    "http://127.0.0.1.badsite.com:8545",
+    "http://localhost.badsite.com:8545",
+  ];
+
+  for (const badUrl of testBypassUrls) {
+    const bypassConfig: EvmConfig = {
+      rpcUrl: badUrl,
+      privateKey: SIMULATION_DUMMY_KEY,
+      contract: "0x1111111111111111111111111111111111111111",
+      network: "Sepolia Testnet",
+      explorerUrl: "https://sepolia.etherscan.io",
+      confirmationsRequired: 2,
+      expectedChainId: 11155111,
+    };
+
+    assert.throws(
+      () => assertSafeStagingConfiguration(bypassConfig),
+      /SECURITY FATAL: The hard-coded simulation key/,
+      `Failed to reject bypass attempt using URL: ${badUrl}`,
+    );
+  }
+});
+
+test("Staging Safety Guard: Approves legitimate local loopback interfaces", () => {
+  const validLoopbacks = [
+    "http://127.0.0.1:8545",
+    "http://127.0.0.1:8545/rpc",
+    "http://localhost:8545",
+    "http://localhost:8545/v1",
+    "http://[::1]:8545",
+    "ws://127.0.0.1:8545",
+    "ws://localhost:8545",
+  ];
+
+  for (const goodUrl of validLoopbacks) {
+    const validConfig: EvmConfig = {
+      rpcUrl: goodUrl,
+      privateKey: SIMULATION_DUMMY_KEY,
+      contract: "0x1111111111111111111111111111111111111111",
+      network: "Local Hardhat/Anvil Node",
+      confirmationsRequired: 1,
+      expectedChainId: 31337,
+    };
+
+    assert.doesNotThrow(
+      () => assertSafeStagingConfiguration(validConfig),
+      `Legitimate loopback host incorrectly rejected: ${goodUrl}`,
+    );
+  }
 });
 
 test("Staging Simulation (RPC-Wire): Local in-process HTTP wire server verifies EIP-155 serialization, observable receipts, and confirmation depth", async () => {
@@ -465,4 +516,20 @@ test("Staging Live Testnet (Opt-In): Genuine on-chain deployment and anchoring a
   });
   assert.strictEqual(verification.isVerified, true, verification.error);
   assert.strictEqual(verification.receiptStatus, "SUCCESS");
+
+  const liveReceiptRecord = {
+    executed_at: new Date().toISOString(),
+    network: config.network,
+    chain_id: chainId,
+    contract_address: config.contract,
+    transaction_hash: result.tx_hash,
+    block_number: result.block_number,
+    confirmations: verification.confirmations,
+    receipt_status: verification.receiptStatus,
+    explorer_url: `${config.explorerUrl}/tx/${result.tx_hash}`,
+    record_hash: liveRecordHash,
+    project_code: liveProjectCode,
+  };
+  console.log("=== LIVE TESTNET TRANSACTION CONFIRMED ===");
+  console.log(JSON.stringify(liveReceiptRecord, null, 2));
 });

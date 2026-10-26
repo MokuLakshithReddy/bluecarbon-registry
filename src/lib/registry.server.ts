@@ -162,7 +162,7 @@ export interface DecisionInput {
   processOutboxInline?: boolean;
 }
 
-async function assertVerifier(supabase: VerifierClient, userId: string) {
+async function assertVerifier(supabase: VerifierClient, userId: string, targetEcosystem?: string) {
   const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId);
   if (error) throw new Error(`Role verification failed: ${error.message}`);
   const roles = (data ?? []).map((r) => r.role);
@@ -170,6 +170,69 @@ async function assertVerifier(supabase: VerifierClient, userId: string) {
     throw new Error(
       "Unauthorized: Only authorized NCCR verifiers or administrators can record verification decisions.",
     );
+  }
+
+  // Cross-check persistent trust registry (enrolled_verifiers)
+  try {
+    const { data: verifierRecord, error: enrollError } = await (
+      supabase as unknown as {
+        from: (table: string) => {
+          select: (cols: string) => {
+            eq: (
+              col: string,
+              val: string,
+            ) => {
+              maybeSingle: () => Promise<{
+                data: {
+                  status?: string;
+                  authorized_biomes?: string[];
+                  accreditation_expires_at?: string | null;
+                } | null;
+                error: { message: string } | null;
+              }>;
+            };
+          };
+        };
+      }
+    )
+      .from("enrolled_verifiers")
+      .select("status, authorized_biomes, accreditation_expires_at")
+      .eq("verifier_id", userId)
+      .maybeSingle();
+
+    if (!enrollError && verifierRecord) {
+      if (verifierRecord.status === "REVOKED") {
+        throw new Error(
+          "Unauthorized: Verifier accreditation has been revoked in the trust registry.",
+        );
+      }
+      if (verifierRecord.status === "SUSPENDED") {
+        throw new Error(
+          "Unauthorized: Verifier accreditation is currently suspended in the trust registry.",
+        );
+      }
+      if (
+        verifierRecord.accreditation_expires_at &&
+        new Date(verifierRecord.accreditation_expires_at).getTime() < Date.now()
+      ) {
+        throw new Error(
+          "Unauthorized: Verifier professional accreditation has expired in the trust registry.",
+        );
+      }
+      if (
+        targetEcosystem &&
+        verifierRecord.authorized_biomes &&
+        !verifierRecord.authorized_biomes.includes(targetEcosystem)
+      ) {
+        throw new Error(
+          `Unauthorized: Verifier is not accredited for '${targetEcosystem}' ecosystems in the trust registry.`,
+        );
+      }
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.startsWith("Unauthorized:")) {
+      throw err;
+    }
   }
 }
 
@@ -284,8 +347,8 @@ export async function startReview(input: DecisionInput) {
 
 /** Approves project verification. Enforces UNDER_REVIEW -> VERIFIED_PENDING_ANCHOR -> VERIFIED transition with full audit and blockchain anchoring. */
 export async function approveProject(input: DecisionInput) {
-  await assertVerifier(input.supabase, input.userId);
   const project = await loadProject(input.supabase, input.projectId);
+  await assertVerifier(input.supabase, input.userId, project.ecosystem);
 
   if (project.status !== "UNDER_REVIEW") {
     throw new Error(

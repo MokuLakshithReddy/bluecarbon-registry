@@ -21,9 +21,14 @@ To ensure zero ambiguity during security audits and compliance certification, th
 | **CI / Automated Gate**  | Mandatory blocking check on every PR.             | Mandatory blocking check in CI without credentials.          | **Opt-in integration gate** enabled via `STAGING_RPC_URL` secrets.                                         |
 
 > [!CAUTION]
-> **Simulation Key Safety Guard:**
+> **Strict URL Hostname Loopback Safety Guard:**
 > The hard-coded private key `0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef` is strictly reserved for local RPC-wire simulation.
-> The codebase enforces an automated runtime guard (`assertSafeStagingConfiguration`): any attempt to supply this dummy key to a non-localhost RPC endpoint throws a fatal security exception immediately, preventing accidental loss of funds or testnet pollution.
+> The codebase enforces an automated runtime guard (`assertSafeStagingConfiguration` in `src/lib/blockchain.server.ts`):
+>
+> - Parses `cfg.rpcUrl` using `new URL()`.
+> - Strictly verifies `isApprovedLoopbackHost(parsed.hostname)`, permitting only exact loopback hostnames (`localhost`, `127.0.0.1`, `::1`).
+> - Rejects remote domains containing loopback strings in path, query string, fragments, or subdomains (e.g. `https://attacker.example/localhost`, `https://attacker.example?rpc=127.0.0.1`, `https://localhost.attacker.example`).
+> - Any attempt to supply the simulation dummy key to a non-loopback endpoint immediately raises a fatal security exception (`SECURITY FATAL: The hard-coded simulation key (0x0123...) must NEVER be used on live networks`).
 
 ---
 
@@ -129,9 +134,68 @@ This test suite executes:
 5. **On-Chain State Cross-Check:** Executes `verifyRecord()` view call via `eth_call` to confirm that the project code, fixed-point milli-tCO2e carbon balance, and timestamp match disk records byte-for-byte.
 6. **Revert Handling:** Validates that transactions reverting on-chain fail closed and transition the database outbox to `FAILED` with descriptive on-chain error telemetry.
 
+### Executing Opt-In Live Staging Integration & Capturing Receipts
+
+When deploying to Ethereum Sepolia or Polygon Amoy, supply your funded credentials via environment secrets (never commit them):
+
+```bash
+STAGING_RPC_URL="https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY" \
+STAGING_CONTRACT_ADDRESS="0xYourDeployedContractAddress" \
+STAGING_PRIVATE_KEY="0xYourFundedKey" \
+STAGING_CHAIN_ID=11155111 \
+npm run test:staging
+```
+
+The test runner:
+
+1. Validates chain ID, deployed bytecode length, and contract address format.
+2. Anchors a unique timestamped staging record on-chain.
+3. Awaits on-chain mining and verifies minimum block confirmation depth.
+4. Outputs the canonical live receipt JSON:
+
+```json
+{
+  "executed_at": "2026-10-26T11:30:00.000Z",
+  "network": "Sepolia Testnet",
+  "chain_id": 11155111,
+  "contract_address": "0x...",
+  "transaction_hash": "0x...",
+  "block_number": 5890123,
+  "confirmations": 2,
+  "receipt_status": "SUCCESS",
+  "explorer_url": "https://sepolia.etherscan.io/tx/0x...",
+  "record_hash": "0x...",
+  "project_code": "STAGING-TEST-..."
+}
+```
+
 ---
 
-## 5. Security & Multi-Sig Transition Plan
+## 5. Durable Trust Registry Deployment & Production Onboarding
+
+### Database Migration
+
+The trust registry schema is defined in `supabase/migrations/20261026000000_durable_sensor_and_verifier_enrollment.sql`:
+
+- `enrolled_sensor_devices`: Persistent hardware trust registry with calibration expiry and revocation tracking.
+- `enrolled_verifiers`: Persistent auditor trust registry with accreditation expiry and authorized biomes.
+- `enrollment_audit_log`: Immutable, append-only security log with database triggers rejecting all `UPDATE` and `DELETE` operations.
+
+To apply and validate the migration against a deployed Supabase instance:
+
+```bash
+# Validate database health, RLS status, and trust registry tables
+npm run validate:db
+```
+
+### Production Onboarding vs. Demonstration Fixtures
+
+- Pre-seeded identities in the migration are provided for automated integration testing and local simulation.
+- **Production Onboarding:** Physical sensors require manufacturer-certified public keys and calibration certificates. Accredited auditors require formal VVB accreditation IDs under ISO 14065 / Verra / NCCR MoES, enrolled exclusively via admin multi-sig or `service_role`.
+
+---
+
+## 6. Security & Multi-Sig Transition Plan
 
 In production mainnet deployments:
 

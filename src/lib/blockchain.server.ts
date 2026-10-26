@@ -333,8 +333,60 @@ export async function validateEVMNetworkAndContract(
   };
 }
 
+export const SIMULATION_DUMMY_KEY =
+  "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+/**
+ * Strictly checks if a hostname is an authorized loopback address.
+ * Rejects subdomains (e.g. localhost.attacker.com), remote domains, and port-spoofed hosts.
+ */
+export function isApprovedLoopbackHost(hostname: string): boolean {
+  const cleanHost = hostname
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase()
+    .trim();
+  return cleanHost === "localhost" || cleanHost === "127.0.0.1" || cleanHost === "::1";
+}
+
+/**
+ * Checks if a given RPC URL points strictly to an authorized loopback host.
+ * Parses the URL with new URL() to avoid path, query string, or subdomain bypasses.
+ */
+export function isLoopbackRpcUrl(rpcUrl: string): boolean {
+  try {
+    const parsed = new URL(rpcUrl);
+    if (
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:" ||
+      parsed.protocol === "ws:" ||
+      parsed.protocol === "wss:"
+    ) {
+      return isApprovedLoopbackHost(parsed.hostname);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Asserts that the simulation dummy key is never accidentally supplied to a live remote network.
+ * Parses the RPC URL and strictly validates the hostname against an approved loopback whitelist.
+ */
+export function assertSafeStagingConfiguration(cfg: EvmConfig): void {
+  const isLoopback = isLoopbackRpcUrl(cfg.rpcUrl);
+  const isSimulationDummyKey = cfg.privateKey?.toLowerCase() === SIMULATION_DUMMY_KEY.toLowerCase();
+
+  if (!isLoopback && isSimulationDummyKey) {
+    throw new Error(
+      "SECURITY FATAL: The hard-coded simulation key (0x0123...) must NEVER be used on live networks. Provide a dedicated funded testnet private key via STAGING_PRIVATE_KEY.",
+    );
+  }
+}
+
 export { createRealEvmProvider as createEvmProvider };
 export function createRealEvmProvider(cfg: EvmConfig): BlockchainProvider {
+  assertSafeStagingConfiguration(cfg);
   return {
     network: cfg.network,
     simulated: false,

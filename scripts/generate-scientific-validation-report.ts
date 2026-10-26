@@ -98,7 +98,24 @@ export function generateScientificValidationReport(): string {
   md += `## 5. Methodological Distinction\n\n`;
   md += `> **Independent Empirical Validation vs. Software Regression Testing:**\n`;
   md += `> - **Empirical Validation (this report):** Evaluates whether the IPCC/VM0033 equations accurately reflect physical accumulation measured by peer-reviewed field scientists across distinct biomes.\n`;
-  md += `> - **Calculation Regression Benchmarks:** Tested in \`tests/scientific/calculation-regression.test.ts\` to verify that software refactoring does not alter internal formula execution.\n`;
+  md += `> - **Calculation Regression Benchmarks:** Tested in \`tests/scientific/calculation-regression.test.ts\` to verify that software refactoring does not alter internal formula execution.\n\n`;
+
+  md += `---\n\n`;
+  md += `## 6. Commercial Pre-Issuance Gate & Independent Scientific Verification Protocol\n\n`;
+  md += `> [!CAUTION]\n`;
+  md += `> **MANDATORY GOVERNANCE GATE — RELEASE BLOCKER FOR CARBON CREDIT ISSUANCE**\n`;
+  md += `>\n`;
+  md += `> 1. **Repository Evidence Boundary:**\n`;
+  md += `>    The empirical benchmarks, in-sample calibration studies, and held-out validation datasets compiled in this repository serve strictly as **pre-issuance software modeling and internal verification benchmarks**. They represent repository-curated benchmarks and do NOT constitute independent legal, scientific, or financial proof of physical emissions reductions.\n`;
+  md += `>\n`;
+  md += `> 2. **Prohibition of Self-Certified Issuance:**\n`;
+  md += `>    No financial carbon credits, tradeable tokens, or regulatory offsets may be issued, minted, or sold based solely on internal repository-authored models, synthetic fixtures, or programmatic evaluations.\n`;
+  md += `>\n`;
+  md += `> 3. **Mandatory Third-Party Verification Prerequisites:**\n`;
+  md += `>    Before any commercial carbon credit issuance can be authorized, the following three conditions must be independently satisfied:\n`;
+  md += `>    - **Original Source & Table Verification:** An accredited, independent third-party institution (e.g., NCCR MoES, certified marine laboratory, or accredited ISO 14065 Validation/Verification Body) must directly verify original laboratory logs, radiometric isotope profiles ($^{210}\\text{Pb} / ^{137}\\text{Cs}$), spectrophotometry data, and raw satellite raster scenes against the cited peer-reviewed publications.\n`;
+  md += `>    - **Independent Extraction & Conversion Audit:** All unit conversions, bulk density derivations, and allometric scaling constants must be validated and certified by an external accredited auditor.\n`;
+  md += `>    - **Mandatory Site-Specific Tier 3 Empirical Baseline:** Because regional Tier 1 models exhibit an unacceptable **31.6% MAPE error margin** on ecological extremes (such as Gujarat Kutch hyper-arid dwarf stands and Kerala Vembanad freshwater-flushed estuaries), credit issuance strictly requires authenticated, site-specific physical ground truth (soil cores, permanent census plots, and continuous sensor telemetry) rather than regional IPCC defaults.\n`;
 
   const outPath = path.resolve(process.cwd(), "docs/SCIENTIFIC_VALIDATION_REPORT.md");
   fs.writeFileSync(outPath, md, "utf-8");

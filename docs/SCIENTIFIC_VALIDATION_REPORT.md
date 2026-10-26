@@ -1,6 +1,6 @@
 # Reproducible Scientific Model Validation Report
 
-**Generated:** 2026-10-26T10:57:35.518Z  
+**Generated:** 2026-10-26T11:21:50.119Z  
 **Validation Engine:** `src/lib/empirical-validation-data.ts`  
 **Methodology:** `IPCC (2013) Wetlands Supplement Ch 4; Verra VM0033 v2.1`  
 **Calibration Baseline (In-Sample):** ✅ **ALL IN-SAMPLE ESTIMATES WITHIN 95% EMPIRICAL CONFIDENCE INTERVALS** (MAPE: 4.1%)  
@@ -88,3 +88,22 @@ To satisfy carbon-accounting integrity guidelines, physical empirical measuremen
 >
 > - **Empirical Validation (this report):** Evaluates whether the IPCC/VM0033 equations accurately reflect physical accumulation measured by peer-reviewed field scientists across distinct biomes.
 > - **Calculation Regression Benchmarks:** Tested in `tests/scientific/calculation-regression.test.ts` to verify that software refactoring does not alter internal formula execution.
+
+---
+
+## 6. Commercial Pre-Issuance Gate & Independent Scientific Verification Protocol
+
+> [!CAUTION]
+> **MANDATORY GOVERNANCE GATE — RELEASE BLOCKER FOR CARBON CREDIT ISSUANCE**
+>
+> 1. **Repository Evidence Boundary:**
+>    The empirical benchmarks, in-sample calibration studies, and held-out validation datasets compiled in this repository serve strictly as **pre-issuance software modeling and internal verification benchmarks**. They represent repository-curated benchmarks and do NOT constitute independent legal, scientific, or financial proof of physical emissions reductions.
+>
+> 2. **Prohibition of Self-Certified Issuance:**
+>    No financial carbon credits, tradeable tokens, or regulatory offsets may be issued, minted, or sold based solely on internal repository-authored models, synthetic fixtures, or programmatic evaluations.
+>
+> 3. **Mandatory Third-Party Verification Prerequisites:**
+>    Before any commercial carbon credit issuance can be authorized, the following three conditions must be independently satisfied:
+>    - **Original Source & Table Verification:** An accredited, independent third-party institution (e.g., NCCR MoES, certified marine laboratory, or accredited ISO 14065 Validation/Verification Body) must directly verify original laboratory logs, radiometric isotope profiles ($^{210}\text{Pb} / ^{137}\text{Cs}$), spectrophotometry data, and raw satellite raster scenes against the cited peer-reviewed publications.
+>    - **Independent Extraction & Conversion Audit:** All unit conversions, bulk density derivations, and allometric scaling constants must be validated and certified by an external accredited auditor.
+>    - **Mandatory Site-Specific Tier 3 Empirical Baseline:** Because regional Tier 1 models exhibit an unacceptable **31.6% MAPE error margin** on ecological extremes (such as Gujarat Kutch hyper-arid dwarf stands and Kerala Vembanad freshwater-flushed estuaries), credit issuance strictly requires authenticated, site-specific physical ground truth (soil cores, permanent census plots, and continuous sensor telemetry) rather than regional IPCC defaults.
