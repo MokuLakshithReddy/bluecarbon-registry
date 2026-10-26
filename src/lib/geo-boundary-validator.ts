@@ -182,3 +182,31 @@ export function validateProjectBoundary(
     errors: [],
   };
 }
+
+/**
+ * Calculates geodesic area of a polygon on the WGS84 authalic sphere (mean radius 6,371,008.8 meters).
+ * Uses spherical excess segment trapezoids.
+ * Returns the area in hectares (1 hectare = 10,000 square meters).
+ */
+export function calculateGeodesicPolygonAreaHectares(polygon: GeoPolygon): number {
+  if (!Array.isArray(polygon) || polygon.length < 3) return 0;
+  const RADIUS = 6371008.8; // WGS84 authalic / mean radius in meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+  let total = 0;
+  const n = polygon.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = polygon[i]!;
+    const p2 = polygon[(i + 1) % n]!;
+    const lon1 = toRad(p1.longitude);
+    const lon2 = toRad(p2.longitude);
+    const lat1 = toRad(p1.latitude);
+    const lat2 = toRad(p2.latitude);
+
+    total += (lon2 - lon1) * (2 + Math.sin(lat1) + Math.sin(lat2));
+  }
+
+  const areaSqMeters = Math.abs((total * RADIUS * RADIUS) / 2);
+  const hectares = areaSqMeters / 10000;
+  return Math.round(hectares * 100) / 100;
+}

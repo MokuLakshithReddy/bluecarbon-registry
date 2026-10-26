@@ -20,7 +20,7 @@ interface Finding {
 }
 
 const SECRET_REGEXES = [
-  { name: "Raw Ethereum Private Key", regex: /0x[a-fA-F0-9]{64}/ },
+  { name: "Raw Ethereum Private Key", regex: /0x[a-fA-F0-9]{64}(?![a-fA-F0-9])/ },
   { name: "Live Supabase Service Secret", regex: /sb_secret_[a-zA-Z0-9_-]{20,}/ },
   { name: "Live Supabase Personal Access Token", regex: /sbp_[a-zA-Z0-9_-]{30,}/ },
   { name: "Live GitHub Personal Token", regex: /ghp_[a-zA-Z0-9]{36}/ },

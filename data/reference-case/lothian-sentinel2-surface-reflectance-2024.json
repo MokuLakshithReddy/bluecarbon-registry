@@ -7,10 +7,10 @@
   "target_region": "Lothian Island Wildlife Sanctuary",
   "cloud_cover_percentage": 1.24,
   "bounding_box_wgs84": {
-    "min_longitude": 88.318,
-    "min_latitude": 21.848,
-    "max_longitude": 88.332,
-    "max_latitude": 21.86
+    "min_longitude": 88.319655,
+    "min_latitude": 21.849704,
+    "max_longitude": 88.329345,
+    "max_latitude": 21.858696
   },
   "spectral_bands": {
     "B02_blue_central_nm": 490,

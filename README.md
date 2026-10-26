@@ -15,7 +15,10 @@
 ---
 
 > [!IMPORTANT]
-> **Regulatory Disclaimer:** This application records _Verified Carbon Impact_ ($\text{tCO}_2\text{e}$) calculated via IPCC Wetlands Supplement defaults for demonstration and verification purposes. It does **not** issue real regulatory carbon credits. Actual carbon-credit issuance requires an approved methodology, an authorised verification body, and compliance with national/international registry frameworks.
+> **Scientific & Regulatory Status Notice: Pre-Review Scientific Prototype**
+>
+> - **Pre-Review Research Status:** The BlueCarbon Registry is an advanced research and MRV software prototype developed in alignment with the Ministry of Earth Sciences (MoES) problem statement. The underlying methodology cites IPCC (2013) Wetlands Supplement and Verra VM0033 standards as computational design targets; **it has not yet received formal external scientific review, regulatory approval, or accreditation by an independent Validation and Verification Body (VVB).**
+> - **Preliminary Modeled Projections:** All carbon quantification figures ($\text{tCO}_2\text{e}$), risk buffer withholdings, uncertainty tiers, and on-chain records represent preliminary algorithmic model outputs. They do **not** constitute regulatory carbon credits or bankable financial assets. Real commercial or compliance issuance requires formal site-specific empirical calibration and on-site audit by an accredited third-party VVB.
 
 ---
 

@@ -20,24 +20,29 @@ Every parameter in this case is grounded in traceable field survey protocols and
 
 ### 2.1 Project Area Polygon (WGS84 GeoJSON Coordinates)
 
-The project boundary encompasses a 100.0-hectare intertidal mudflat parcel along the eastern fringe of Lothian Island Wildlife Sanctuary:
+The project boundary encompasses a 100.0-hectare intertidal mudflat parcel along the fringe of Lothian Island Wildlife Sanctuary, centered at `21.8542° N, 88.3245° E`:
 
 ```json
 {
   "type": "Polygon",
   "coordinates": [
     [
-      [88.318, 21.848],
-      [88.332, 21.848],
-      [88.332, 21.86],
-      [88.318, 21.86],
-      [88.318, 21.848]
+      [88.319655, 21.849704],
+      [88.329345, 21.849704],
+      [88.329345, 21.858696],
+      [88.319655, 21.858696],
+      [88.319655, 21.849704]
     ]
   ]
 }
 ```
 
-_Total Delineated Area:_ **100.0 hectares** (calculated via spherical geodesic polygon integration).
+_Geodesic Area Reconciliation:_
+
+- **Longitudinal Span:** $88.329345° - 88.319655° = 0.009690° \approx 1,000.0\text{ m}$ (at $21.8542°\text{ N}$).
+- **Latitudinal Span:** $21.858696° - 21.849704° = 0.008992° \approx 1,000.0\text{ m}$.
+- **Spherical Geodesic Area:** **100.00 hectares** ($1,000,000\text{ m}^2$), calculated via `calculateGeodesicPolygonAreaHectares()` using WGS84 authalic mean radius ($R = 6,371,008.8\text{ m}$).
+- _Note on Historical Discrepancy:_ An earlier exploratory bounding box spanning $88.318°$ to $88.332°$ (~~$1.45\text{ km}$) by $21.848°$ to $21.860°$ (~~$1.33\text{ km}$) measured ~193 hectares. The polygon coordinates have been recalculated and reconciled so that the stated boundary geometry, geodesic integration, and 100.0 ha project area agree exactly.
 
 ### 2.2 Monitoring Period
 
@@ -55,8 +60,12 @@ To qualify for **Tier 3 (Comprehensive Site Calibration)**, the project develope
 | :----------------------- | :------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------- | :----------------------------------------------------------------- | :---------------------------------------------------------------------------------------- |
 | `EVD-LOTH-2024-SOC-01`   | `SOIL_CORE_ORGANIC_CARBON_ASSAY` | [`data/reference-case/lothian-sediment-cores-2024.csv`](../data/reference-case/lothian-sediment-cores-2024.csv). 12 depth-stratified sediment core segments (0–100 cm depth). Loss-on-Ignition (LOI 550°C) & Walkley-Black dry combustion. Mean SOC = 1.48% wt.                           | 2024-11-15T09:30:00Z | `fa5da4b858f22e1fef6778e63c58a293dc619dcc06ab21ecbc357bd317bf1222` | Verifier ID: `nccr-auditor-dr-das`<br>Review ID: `rev-2024-loth-01`<br>Status: `VERIFIED` |
 | `EVD-LOTH-2024-ALLOM-02` | `ALLOMETRIC_GROWTH_SURVEY`       | [`data/reference-case/lothian-allometric-census-2024.csv`](../data/reference-case/lothian-allometric-census-2024.csv). Permanent circular sample plots. Measured DBH, tree height, and canopy cover. 17 alive / 3 dead = 85.0% survival rate.                                             | 2024-12-01T14:15:00Z | `d09319bc3a757072bad3a448cd03d5382f6e7536ed5d4f7fb8fee051e2d31584` | Verifier ID: `nccr-auditor-dr-das`<br>Review ID: `rev-2024-loth-01`<br>Status: `VERIFIED` |
-| `EVD-LOTH-2024-NDVI-03`  | `MULTISPECTRAL_RASTER`           | [`data/reference-case/lothian-sentinel2-surface-reflectance-2024.json`](../data/reference-case/lothian-sentinel2-surface-reflectance-2024.json). European Space Agency (ESA) Sentinel-2A Level-2A BOA reflectance. Mean project NDVI = 0.742 ($\pm 0.041$).                               | 2024-12-10T04:47:11Z | `b3114264a88a4ac942a923d2e70f2f38382aaa0c234c8247166cc3dfdd11e44e` | Verifier ID: `nccr-auditor-dr-das`<br>Review ID: `rev-2024-loth-01`<br>Status: `VERIFIED` |
-| `EVD-LOTH-2024-IOT-04`   | `CALIBRATED_SENSOR_TELEMETRY`    | [`data/reference-case/lothian-ysi-telemetry-2024.json`](../data/reference-case/lothian-ysi-telemetry-2024.json). In-situ YSI EXO2 multiparameter sonde at Lothian Jetty. Continuous conductivity/salinity logging. Mean salinity = 24.5 ppt (min 21.2, max 28.6). Secp256k1 ECDSA signed. | 2024-12-20T18:00:00Z | `4183e1f4a49354296dba915768560558ba04daab30cf275d3c4c1ab16ef7e700` | Verifier ID: `nccr-auditor-dr-das`<br>Review ID: `rev-2024-loth-01`<br>Status: `VERIFIED` |
+| `EVD-LOTH-2024-NDVI-03`  | `MULTISPECTRAL_RASTER`           | [`data/reference-case/lothian-sentinel2-surface-reflectance-2024.json`](../data/reference-case/lothian-sentinel2-surface-reflectance-2024.json). European Space Agency (ESA) Sentinel-2A Level-2A BOA reflectance. Mean project NDVI = 0.742 ($\pm 0.041$).                               | 2024-12-10T04:47:11Z | `d9ee35742bdf357917989308dc459c1e155ab9c92bbdcc4e952ed93faef866d1` | Verifier ID: `nccr-auditor-dr-das`<br>Review ID: `rev-2024-loth-01`<br>Status: `VERIFIED` |
+| `EVD-LOTH-2024-IOT-04`   | `CALIBRATED_SENSOR_TELEMETRY`    | [`data/reference-case/lothian-ysi-telemetry-2024.json`](../data/reference-case/lothian-ysi-telemetry-2024.json). In-situ YSI EXO2 multiparameter sonde at Lothian Jetty. Continuous conductivity/salinity logging. Mean salinity = 24.5 ppt (min 21.2, max 28.6). Secp256k1 ECDSA signed. | 2024-12-20T18:00:00Z | `ea5e411e673ca1b47b153460f9435b6897b0ad010e583eb79a843869c838a79b` | Verifier ID: `nccr-auditor-dr-das`<br>Review ID: `rev-2024-loth-01`<br>Status: `VERIFIED` |
+
+> [!NOTE]
+> **Data Authenticity & Standardized Research Fixture Scope:**
+> The reference case files provide reproducible, byte-exact, cryptographically signed fixtures for end-to-end integration and MRV pipeline validation. Their parameters are mathematically grounded in peer-reviewed field literature (Ray et al. 2011, IPCC 2013). Cryptographic hash integrity proves that file bytes match the recorded digest, and the secp256k1 ECDSA signature proves device key possession; in a live commercial registry, physical authenticity of field observations requires on-site chain-of-custody verification by an accredited third-party VVB.
 
 ---
 

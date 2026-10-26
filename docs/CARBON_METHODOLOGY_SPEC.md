@@ -8,6 +8,12 @@
 - **Verra (VCS) VM0033:** _Methodology for Tidal Wetland and Seagrass Restoration, v2.1_.
 - **MoES / NCCR Protocol:** _National Centre for Coastal Research Blue Carbon MRV Standards (2026)_.
 
+> [!IMPORTANT]
+> **Methodological Status Notice: Pre-Review Scientific Prototype**
+> This specification defines the computational equations and reference parameters implemented in the BlueCarbon Registry engine.
+> Citations of IPCC (2013), Verra VM0033, and peer-reviewed literature represent computational design baselines. They **do not** constitute independent third-party validation, regulatory accreditation, or commercial approval.
+> Real-world commercial crediting requires formal project validation and on-site audit by an accredited Validation and Verification Body (VVB) to establish site-specific parameter applicability for newly restored coastal sites.
+
 ---
 
 ## 1. Accounting Scope & Boundaries

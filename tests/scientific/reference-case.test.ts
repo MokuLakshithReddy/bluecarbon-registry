@@ -8,6 +8,9 @@ import {
   createAuthoritativeVerifierDecision,
   type CarbonCalculationInput,
 } from "../../src/lib/carbon-methodology.ts";
+import { calculateGeodesicPolygonAreaHectares } from "../../src/lib/geo-boundary-validator.ts";
+import { canonicalizeTelemetry } from "../../src/lib/telemetry-crypto.server.ts";
+import { ethers } from "ethers";
 
 test("Reference Case: Real source files exist, hashes match disk bytes, and calculations reproduce exactly", () => {
   const baseDir = path.resolve(process.cwd(), "data/reference-case");
@@ -34,8 +37,8 @@ test("Reference Case: Real source files exist, hashes match disk bytes, and calc
   // Assert expected hashes match byte-calculated values
   assert.strictEqual(socHash, "fa5da4b858f22e1fef6778e63c58a293dc619dcc06ab21ecbc357bd317bf1222");
   assert.strictEqual(allomHash, "d09319bc3a757072bad3a448cd03d5382f6e7536ed5d4f7fb8fee051e2d31584");
-  assert.strictEqual(s2Hash, "b3114264a88a4ac942a923d2e70f2f38382aaa0c234c8247166cc3dfdd11e44e");
-  assert.strictEqual(ysiHash, "4183e1f4a49354296dba915768560558ba04daab30cf275d3c4c1ab16ef7e700");
+  assert.strictEqual(s2Hash, "d9ee35742bdf357917989308dc459c1e155ab9c92bbdcc4e952ed93faef866d1");
+  assert.strictEqual(ysiHash, "ea5e411e673ca1b47b153460f9435b6897b0ad010e583eb79a843869c838a79b");
 
   // 2. Validate internal empirical observations from parsed source files
   const allomLines = allomBytes.toString("utf-8").trim().split("\n").slice(1);
@@ -201,5 +204,83 @@ test("Reference Case: User-asserted VERIFIED status without verifier endorsement
     result.defaultInputsApplied.some((w) =>
       w.includes("rejected_2_items_missing_authoritative_decision"),
     ),
+  );
+});
+
+test("Reference Case: Geodesic polygon area integration strictly reconciles to 100.00 hectares", () => {
+  // 1. Reference research project polygon (recalculated to reconcile geometry and stated area)
+  const reconciledPolygon = [
+    { latitude: 21.849704, longitude: 88.319655 },
+    { latitude: 21.849704, longitude: 88.329345 },
+    { latitude: 21.858696, longitude: 88.329345 },
+    { latitude: 21.858696, longitude: 88.319655 },
+  ];
+
+  const calculatedAreaHa = calculateGeodesicPolygonAreaHectares(reconciledPolygon);
+  assert.strictEqual(
+    Math.round(calculatedAreaHa * 10) / 10,
+    100.0,
+    "Geodesic polygon area must round to 100.0 hectares",
+  );
+  assert.ok(
+    Math.abs(calculatedAreaHa - 100.0) < 0.05,
+    `Calculated geodesic area (${calculatedAreaHa} ha) must match 100.0 ha within 0.05 ha precision`,
+  );
+
+  // 2. Contrast with the historical unconstrained bounding box (88.318..88.332, 21.848..21.860)
+  const legacyPolygon = [
+    { latitude: 21.848, longitude: 88.318 },
+    { latitude: 21.848, longitude: 88.332 },
+    { latitude: 21.86, longitude: 88.332 },
+    { latitude: 21.86, longitude: 88.318 },
+  ];
+  const legacyAreaHa = calculateGeodesicPolygonAreaHectares(legacyPolygon);
+  assert.ok(
+    legacyAreaHa > 190 && legacyAreaHa < 195,
+    `Legacy bounding box was ~193 hectares (${legacyAreaHa} ha), proving need for exact geodesic boundary reconciliation`,
+  );
+});
+
+test("Reference Case: YSI telemetry secp256k1 cryptographic signature mathematically verifies against payload and fails on tampering", () => {
+  const ysiPath = path.resolve(
+    process.cwd(),
+    "data/reference-case/lothian-ysi-telemetry-2024.json",
+  );
+  const rawContent = fs.readFileSync(ysiPath, "utf-8");
+  const ysiData = JSON.parse(rawContent);
+
+  // Separate canonical sensor reading payload from ECDSA envelope
+  const { ecdsa_signature, ...payload } = ysiData;
+
+  assert.ok(ecdsa_signature, "Signature envelope must be present");
+  assert.strictEqual(ecdsa_signature.curve, "secp256k1");
+  assert.ok(ecdsa_signature.signer_address, "Signer address must be present");
+  assert.ok(ecdsa_signature.signature, "Signature hex must be present");
+  assert.ok(ecdsa_signature.signer_public_key, "Signer public key must be present");
+
+  // Verify that canonical representation signs cleanly
+  const canonical = canonicalizeTelemetry(payload);
+  const recoveredSigner = ethers.verifyMessage(canonical, ecdsa_signature.signature);
+
+  assert.strictEqual(
+    recoveredSigner.toLowerCase(),
+    ecdsa_signature.signer_address.toLowerCase(),
+    "Cryptographic recovery must authenticate genuine sensor device address",
+  );
+
+  // Verify that tampering any single observation in the payload causes signature verification to fail
+  const tamperedPayload = JSON.parse(JSON.stringify(payload));
+  tamperedPayload.metrics.salinity_ppt.mean = 24.6; // Tamper salinity by 0.1 ppt
+
+  const tamperedCanonical = canonicalizeTelemetry(tamperedPayload);
+  const tamperedRecoveredSigner = ethers.verifyMessage(
+    tamperedCanonical,
+    ecdsa_signature.signature,
+  );
+
+  assert.notStrictEqual(
+    tamperedRecoveredSigner.toLowerCase(),
+    ecdsa_signature.signer_address.toLowerCase(),
+    "Tampered telemetry payload must fail cryptographic signature verification",
   );
 });

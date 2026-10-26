@@ -85,8 +85,8 @@ export const EMPIRICAL_FIELD_STUDIES: EmpiricalFieldStudy[] = [
     state: "West Bengal",
     ecosystem: "MANGROVE",
     coordinates: {
-      latitude: 21.85,
-      longitude: 88.85,
+      latitude: 21.8542,
+      longitude: 88.3245,
       datum: "WGS84",
       crs: "EPSG:4326",
     },
