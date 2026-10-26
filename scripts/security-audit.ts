@@ -445,6 +445,16 @@ const AUDITED_SECURITY_EXCEPTIONS: AuditedSecurityException[] = [
     owner: "Platform Security",
     expiryDate: "2026-12-31",
   },
+  {
+    advisoryId: "GHSA-mrhx-c7xc-m3w5",
+    package: "zod",
+    severity: "high",
+    rationale: "Zod constrained array memory exhaustion during parsing",
+    mitigation:
+      "All server-side endpoints and payload processors enforce strict upstream request body size limits and bounded array counts",
+    owner: "Application Security",
+    expiryDate: "2026-12-31",
+  },
 ];
 
 function checkDependencyAudit(): { passed: boolean; unapprovedCount: number } {

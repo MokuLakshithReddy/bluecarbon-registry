@@ -2,7 +2,7 @@
 
 [![CI Pipeline](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml)
 [![Branch Protection](https://img.shields.io/badge/branch%20protection-main%20enforced-success)](https://github.com/MokuLakshithReddy/bluecarbon-registry/branches)
-[![Tests Passing](https://img.shields.io/badge/tests-173%20passed-brightgreen)](tests)
+[![Tests Passing](https://img.shields.io/badge/tests-176%20passed-brightgreen)](tests)
 ![Node.js Version](https://img.shields.io/badge/node.js-%E2%89%A5%2022.0.0-brightgreen)
 ![TypeScript](https://img.shields.io/badge/typescript-v5.8-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-prettier-ff69b4)
@@ -97,18 +97,18 @@ The **BlueCarbon Registry** solves these challenges by combining cryptographic e
 
 To maintain full transparency, the matrix below details the operational status of each capability across the platform:
 
-| Capability / Feature                          | Status          | Operational Details                                                                                           |
-| :-------------------------------------------- | :-------------- | :------------------------------------------------------------------------------------------------------------ |
-| **Evidence SHA-256 & URI Binding**            | ✅ Implemented  | Fail-closed evidence validation and cross-project URI matching in `src/lib/registry.server.ts`.               |
-| **Database RLS & Identity RPCs**              | ✅ Implemented  | PostgreSQL Row-Level Security and `SECURITY DEFINER` procedures in Supabase migrations.                       |
-| **IPCC Methodology Engine**                   | ✅ Implemented  | Biomass & soil accretion formulas with 15% risk buffer and methane deduction in `src/lib/carbon.ts`.          |
-| **Smart Contract (`BlueCarbonRegistry.sol`)** | ✅ Implemented  | RBAC-protected EVM anchoring contract with fixed-point milli$\text{tCO}_2\text{e}$ precision.                 |
-| **In-Process EVM Execution Tests**            | ✅ Implemented  | Tested against `@ethereumjs/vm` in `tests/blockchain/contract-solidity.test.ts`.                              |
-| **Real EVM Network Anchoring**                | ⚙️ Configurable | Submits signed EVM transactions when RPC node credentials are set; falls back to simulated mode when omitted. |
-| **SIWE (Sign-In With Ethereum)**              | ✅ Implemented  | EIP-4361 authentication with atomic database nonce persistence.                                               |
-| **IoT / Drone Telemetry ECDSA**               | 🧪 Unit-Tested  | Validated in unit test suite (`tests/evidence/telemetry-crypto.test.ts`).                                     |
-| **Decentralized Storage (IPFS / Arweave)**    | 🧪 Unit-Tested  | Gateway resolution and multihash verification tested in `tests/evidence/decentralized-storage.test.ts`.       |
-| **Demo Account Quick-Login**                  | 🔒 Gated        | Restricted strictly to non-production development environments via `VITE_ALLOW_DEMO_LOGIN`.                   |
+| Capability / Feature                          | Status          | Operational Details                                                                                                                             |
+| :-------------------------------------------- | :-------------- | :---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Evidence SHA-256 & URI Binding**            | ✅ Implemented  | Fail-closed evidence validation and cross-project URI matching in `src/lib/registry.server.ts`.                                                 |
+| **Database RLS & Identity RPCs**              | ✅ Implemented  | PostgreSQL Row-Level Security and `SECURITY DEFINER` procedures in Supabase migrations.                                                         |
+| **IPCC Methodology Engine**                   | ✅ Implemented  | Tiered biomass & soil accretion formulas with 15% risk buffer, methane deductions, and empirical validation in `src/lib/carbon-methodology.ts`. |
+| **Smart Contract (`BlueCarbonRegistry.sol`)** | ✅ Implemented  | RBAC-protected EVM anchoring contract with fixed-point milli$\text{tCO}_2\text{e}$ precision.                                                   |
+| **In-Process EVM Execution Tests**            | ✅ Implemented  | Tested against `@ethereumjs/vm` in `tests/blockchain/contract-solidity.test.ts`.                                                                |
+| **Real EVM Network Anchoring**                | ⚙️ Configurable | Submits signed EVM transactions when RPC node credentials are set; falls back to simulated mode when omitted.                                   |
+| **SIWE (Sign-In With Ethereum)**              | ✅ Implemented  | EIP-4361 authentication with atomic database nonce persistence.                                                                                 |
+| **IoT / Drone Telemetry ECDSA**               | 🧪 Unit-Tested  | Validated in unit test suite (`tests/evidence/telemetry-crypto.test.ts`).                                                                       |
+| **Decentralized Storage (IPFS / Arweave)**    | 🧪 Unit-Tested  | Gateway resolution and multihash verification tested in `tests/evidence/decentralized-storage.test.ts`.                                         |
+| **Demo Account Quick-Login**                  | 🔒 Gated        | Restricted strictly to non-production development environments via `VITE_ALLOW_DEMO_LOGIN`.                                                     |
 
 ---
 
@@ -127,7 +127,7 @@ To maintain full transparency, the matrix below details the operational status o
                                │  ├── src/lib/registry.server.ts        │
                                │  ├── src/lib/blockchain.server.ts      │
                                │  ├── src/lib/evidence-validator.ts     │
-                               │  └── src/lib/carbon.ts                  │
+                               │  └── src/lib/carbon-methodology.ts     │
                                └────────────────────┬────────────────────┘
                                                     │
                                                     ▼
@@ -174,6 +174,7 @@ To maintain full transparency, the matrix below details the operational status o
 Deep-dive architecture specifications, security reviews, and operational runbooks are maintained in the [`docs/`](./docs) directory:
 
 - 📖 [**Carbon Methodology Specification**](./docs/CARBON_METHODOLOGY_SPEC.md) — IPCC Wetlands Supplement 2013 equations, biomass/soil factors, methane deduction rules, and Tier 1/2/3 evidence requirements.
+- 🔬 [**Reference Research Project Case**](./docs/REFERENCE_RESEARCH_PROJECT_CASE.md) — End-to-end reproducible research case (Sundarbans Lothian Island) with raw observations, soil core assays, telemetry, and mathematical derivation.
 - 🚀 [**Deployment and Rollback Protocol**](./docs/DEPLOYMENT_AND_ROLLBACK.md) — Production deployment instructions, environment readiness checks, migration procedures, and zero-downtime rollback runbooks.
 - 🚑 [**Disaster Recovery Runbook**](./docs/DISASTER_RECOVERY.md) — Outbox worker recovery, stranded job reconciliation, state synchronization, and emergency blockchain reconciliation procedures.
 - 📜 [**MRV Standards Alignment**](./docs/MRV_STANDARDS_ALIGNMENT.md) — Compliance alignment with Verra VM0033/VM0007, Plan Vivo, and ISO 14064-2 monitoring standards.
@@ -364,20 +365,25 @@ npm run test:evm
 
 ## Carbon Calculation Methodology
 
-Calculations in `src/lib/carbon.ts` adhere to IPCC Wetlands Supplement 2013 default coefficients:
+Calculations in `src/lib/carbon-methodology.ts` implement the IPCC Wetlands Supplement 2013 (Chapter 4) and Verra VM0033 v2.1 tiered accounting framework:
 
-$$\text{Annual Carbon Sequestration } (\text{tCO}_2\text{e}/\text{yr}) = \text{Area (ha)} \times (\text{Biomass Factor} + \text{Soil Accretion Factor}) \times \frac{44}{12} \times (1 - \text{Buffer Deduction})$$
+$$\text{Gross Accumulation } (C_{\text{gross}}) = \text{Area (ha)} \times \text{Duration (yr)} \times \Big( (R_{\text{bio}} \times S_{\text{rate}}) + R_{\text{soil}} \Big)$$
 
-### Default IPCC Coefficients
+$$\text{Net Carbon Metric } (C_{\text{net}}) = \Big[ (C_{\text{gross}} - D_{\text{CH}_4} - D_{\text{leakage}}) \times (1 - B_{\text{reversal}}) \times (1 - U_{\text{discount}}) \Big]$$
 
-| Coastal Biome       | Biomass Growth ($\text{tC/ha/yr}$) | Soil Accretion ($\text{tC/ha/yr}$) | Baseline Buffer Deduction          |
-| :------------------ | :--------------------------------- | :--------------------------------- | :--------------------------------- |
-| **Mangrove**        | $3.14$                             | $0.235$                            | $15\%$ (Verra AFOLU Risk Standard) |
-| **Seagrass**        | $0.58$                             | $0.149$                            | $15\%$                             |
-| **Salt Marsh**      | $1.84$                             | $0.218$                            | $15\%$                             |
-| **Coastal Wetland** | $0.97$                             | $0.172$                            | $15\%$                             |
+### Ecosystem Sequestration Rates ($t\text{CO}_2\text{e}/\text{ha}/\text{yr}$)
+
+| Coastal Biome        | Biomass Growth ($R_{\text{bio}}$) | Soil Accretion ($R_{\text{soil}}$) | Gross Annual Rate ($C_{\text{gross}}$) | Baseline Buffer ($B_{\text{reversal}}$) |
+| :------------------- | :-------------------------------- | :--------------------------------- | :------------------------------------- | :-------------------------------------- |
+| **Mangrove Forest**  | $7.80$                            | $5.90$                             | $13.70$                                | $15\%$ (Verra AFOLU Risk Standard)      |
+| **Seagrass Meadow**  | $0.40$                            | $4.80$                             | $5.20$                                 | $15\%$                                  |
+| **Tidal Salt Marsh** | $2.10$                            | $6.20$                             | $8.30$                                 | $15\%$                                  |
+| **Coastal Wetland**  | $3.20$                            | $4.50$                             | $7.70$                                 | $15\%$                                  |
 
 - **Methane ($\text{CH}_4$) Adjustment:** For brackish or low-salinity sites ($< 18\text{ ppt}$), a methane deduction of $5.42\text{ tCO}_2\text{e/ha/yr}$ ($193.7\text{ kg CH}_4\text{/ha/yr} \times 28\text{ GWP-100}$) is applied.
+- **Scientific Uncertainty Discount ($U_{\text{discount}}$):** Tier 1: $10\%$, Tier 2: $5\%$ (requires verified site sampling), Tier 3: $3\%$ (requires validated soil cores and allometric plots).
+- **Independent Empirical Validation:** Validated against peer-reviewed coastal field observations (Sundarbans Ray et al. 2011, Pichavaram Kathiresan 2000, Chilika Ganguly et al. 2017) in `src/lib/empirical-validation-data.ts`.
+- **Reproducible Case Study:** See [`docs/REFERENCE_RESEARCH_PROJECT_CASE.md`](./docs/REFERENCE_RESEARCH_PROJECT_CASE.md) for a complete step-by-step audit trail.
 
 ---
 

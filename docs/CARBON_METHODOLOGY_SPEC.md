@@ -66,15 +66,46 @@ Where:
    - Mandatory withholding of **15.0%** (Verra AFOLU Risk Tool guideline) allocated to an uncredited reversal risk buffer pool (hedging against cyclones, sea-level rise, die-offs).
 
 4. **$U_{\text{discount}}$ (Scientific Uncertainty Deduction)**:
-   - **Tier 1 (Literature Default):** 10.0% deduction.
-   - **Tier 2 (Ground-Truthed Site Sampling):** Reduced to 3.0% when site-specific soil core or allometric survey evidence is attached.
-   - **Tier 3 (Continuous Soil Cores & Allometry):** 3.0% deduction with empirical site calibration.
+   - **Tier 1 (Literature Default):** 10.0% deduction (conservative baseline for default regional parameters).
+   - **Tier 2 (Ground-Truthed Site Sampling):** 5.0% deduction when site-calibrated ground truth sampling or allometric growth survey evidence is verified.
+   - **Tier 3 (Continuous Soil Cores & Allometry):** 3.0% deduction when both validated laboratory soil core organic carbon assays (e.g. Loss-on-Ignition / Walkley-Black) and allometric permanent sample plots are verified.
+
+### 3.2 Decoupling of Biomass and Soil Accretion
+
+The gross carbon formula decouples vegetative biomass accumulation from soil mineral carbon accretion:
+$$C_{\text{gross}} = A \times T \times \Big( (R_{\text{bio}} \times S_{\text{rate}}) + R_{\text{soil}} \Big)$$
+
+- **Biomass Carbon ($R_{\text{bio}} \times S_{\text{rate}}$):** Directly dependent on sapling establishment, vegetative density, and tree survival ($S_{\text{rate}}$).
+- **Soil Accretion ($R_{\text{soil}}$):** Represents mineral sediment deposition and autochthonous/allochthonous organic matter trapping in coastal wetlands. In hydrodynamically restored intertidal zones, tidal inundation deposits carbon-bearing sediment across the wetland basin even when vegetative canopy cover is establishing. In `STRICT_VERIFICATION` mode, Tier 3 soil accretion requires empirical site-specific sediment core assays.
+
+### 3.3 Output Nomenclature & Semantics
+
+- **`grossMinusEmissionsAndLeakageTco2e` (aliased as `netEstimatedTco2e`):** Intermediate subtotal reflecting gross sequestration minus methane emissions and leakage, before applying non-permanence risk buffers and uncertainty discounts.
+- **`netModelEstimateTco2e` (aliased as `netVerifiedTco2e`):** The final conservative model-calculated carbon metric after deducting the 15% risk buffer and tier-specific uncertainty discount ($3\%\dots 10\%$).
+- **Distinction from Carbon Credits:** Neither field represents an issued financial carbon credit. Credits may only be minted after independent VVB verification and formal registry authorization.
 
 ---
 
-## 4. Benchmark Validation Ranges
+## 4. Empirical Validation & Benchmark Tests
 
-The implementation is verified against published empirical field data from premier Indian research sites:
+The repository maintains two distinct testing regimens:
+
+### 4.1 Independent Empirical Validation
+
+The model is validated against published, held-out field observations from peer-reviewed Indian coastal wetland studies (see `src/lib/empirical-validation-data.ts`):
+
+1. **Sundarbans Biosphere Reserve** (Ray et al. 2011): Avicennia/Rhizophora mangrove soil accretion & biomass.
+2. **Pichavaram Mangrove Wetland** (Kathiresan 2000): Long-term restored Rhizophora stand observations.
+3. **Chilika Lagoon** (Ganguly et al. 2017): Seagrass meadow (Halophila ovalis) carbon accumulation.
+
+The empirical validation suite checks:
+
+- Model predictions fall within the reported 95% confidence intervals of measured field datasets.
+- Mean Absolute Percentage Error (MAPE) remains $< 20\%$ across independent coastal sites.
+
+### 4.2 Computational Regression Benchmarks
+
+Internal benchmark ranges in `REFERENCE_BENCHMARKS` serve strictly as calculation consistency and regression guards to prevent accidental formula alterations across software releases:
 
 | Benchmark Site           | Ecosystem | Area (ha) | Expected Range (tCO₂e/yr) | Measured Model Output |
 | ------------------------ | --------- | --------- | ------------------------- | --------------------- |

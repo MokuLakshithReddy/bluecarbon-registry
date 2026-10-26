@@ -96,6 +96,28 @@ export const SCIENTIFIC_CARBON_COEFFICIENTS: Record<Ecosystem, EcosystemCarbonPa
   },
 };
 
+export type EvidenceType =
+  | "SOIL_CORE_ORGANIC_CARBON_ASSAY"
+  | "ALLOMETRIC_GROWTH_SURVEY"
+  | "GROUND_TRUTH_SAMPLING"
+  | "MULTISPECTRAL_RASTER"
+  | "DRONE_AERIAL_SURVEY"
+  | "CALIBRATED_SENSOR_TELEMETRY"
+  | "THIRD_PARTY_AUDIT_REPORT";
+
+export interface StructuredEvidenceItem {
+  evidenceId: string;
+  type: EvidenceType;
+  uri: string;
+  sha256Hash: string;
+  issuer: string; // Accredited laboratory, institute, or certified surveyor
+  collectionDate: string;
+  coordinateReferenceSystem?: string | undefined; // e.g. "EPSG:4326"
+  laboratoryMethod?: string | undefined; // e.g. "Walkley-Black titration" or "Loss-on-Ignition at 450C"
+  calibrationRecordId?: string | undefined;
+  verificationStatus: "VERIFIED" | "PENDING" | "REJECTED";
+}
+
 export interface CarbonCalculationInput {
   ecosystem: Ecosystem;
   areaHectares: number;
@@ -105,7 +127,9 @@ export interface CarbonCalculationInput {
   salinityPpt?: number | null | undefined; // Salinity in parts per thousand (threshold 18 ppt for CH4)
   hasLeakageDisplacement?: boolean | undefined;
   tier?: "TIER_1_DEFAULTS" | "TIER_2_SITE_CALIBRATED" | "TIER_3_SOIL_CORES" | undefined;
-  tierSupportingEvidence?: string[] | undefined; // Supporting evidence URIs/hashes required for Tier 2/3
+  tierSupportingEvidence?: string[] | undefined; // Legacy supporting evidence URIs/hashes
+  structuredEvidence?: StructuredEvidenceItem[] | undefined; // High-integrity structured evidence records
+  mode?: "EXPLORATORY" | "STRICT_VERIFICATION" | undefined; // Strict mode rejects missing/invalid values
 }
 
 /**
@@ -174,15 +198,38 @@ export interface DetailedCarbonAssessment {
   ghgEmissionsDeductionTco2e: number;
   leakageDeductionTco2e: number;
   riskBufferDeductionTco2e: number; // 15% non-permanence risk buffer withholding (Verra AFOLU Risk Tool)
-  uncertaintyDiscountTco2e: number; // 10% (Tier 1) or 3% (Tier 2/3)
+  uncertaintyDiscountTco2e: number; // 10% (Tier 1), 5% (Tier 2), or 3% (Tier 3)
+  uncertaintyRate: number; // Fraction (0.10, 0.05, 0.03)
 
-  // Net Model Estimates (Unaccredited)
+  // Intermediate & Net Model Estimates
+  grossMinusEmissionsAndLeakageTco2e: number;
+  /**
+   * @deprecated Use grossMinusEmissionsAndLeakageTco2e or netModelEstimateTco2e.
+   * Represents gross accumulation minus methane emissions and leakage, before risk buffer and uncertainty.
+   */
   netEstimatedTco2e: number;
+  /**
+   * Conservative net carbon model estimate after deducting 15% risk buffer and uncertainty discount.
+   */
+  netModelEstimateTco2e: number;
+  /**
+   * Internal registry compliance metric alias for netModelEstimateTco2e.
+   * Model estimate only; does not constitute accredited tradable carbon offsets.
+   */
   netVerifiedTco2e: number;
 
   citation: string;
   unaccreditedDisclaimer: string;
   defaultInputsApplied: string[];
+  evidenceAuditTrail?:
+    | {
+        tierRequested: string;
+        tierAssigned: string;
+        evidenceCount: number;
+        evidenceTypes: EvidenceType[];
+        requiredEvidenceMet: boolean;
+      }
+    | undefined;
 }
 
 /**
@@ -190,6 +237,7 @@ export interface DetailedCarbonAssessment {
  * Enforces explicit separation between gross sequestration, risk buffers, deductions, and net verified model estimate.
  */
 export function calculateScientificCarbon(input: CarbonCalculationInput): DetailedCarbonAssessment {
+  const isStrict = input.mode === "STRICT_VERIFICATION";
   const area = Math.max(0, Number(input.areaHectares || 0));
   const params =
     SCIENTIFIC_CARBON_COEFFICIENTS[input.ecosystem] ?? SCIENTIFIC_CARBON_COEFFICIENTS.OTHER;
@@ -212,15 +260,33 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
       );
     }
     durationYears = Math.max(0.1, (end - start) / (1000 * 60 * 60 * 24 * 365.25));
+  } else if (isStrict) {
+    throw new Error(
+      "Strict Verification Error: Valid restorationStartDate and restorationEndDate are required for formal verification.",
+    );
   } else {
     defaultInputsApplied.push("restoration_duration_default_1_year");
   }
 
   // Survival rate scaling
+  let survival: number;
   if (input.survivalRate == null) {
+    if (isStrict) {
+      throw new Error(
+        "Strict Verification Error: Measured seedling survival rate is required for formal verification.",
+      );
+    }
     defaultInputsApplied.push("survival_rate_conservative_default_80%");
+    survival = 80;
+  } else {
+    const s = Number(input.survivalRate);
+    if (Number.isNaN(s) || s < 0 || s > 100) {
+      throw new Error(
+        `Invalid survival rate: ${input.survivalRate}. Must be a valid percentage between 0 and 100.`,
+      );
+    }
+    survival = s;
   }
-  const survival = Math.min(100, Math.max(0, Number(input.survivalRate ?? 80)));
   const survivalFactor = survival / 100;
 
   // 1. Biomass Sequestration (scaled by survival rate)
@@ -235,10 +301,25 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
   // In saline coastal water (>= 18 ppt), sulfate reduction suppresses methanogenesis (emission = 0).
   // In brackish/fresh conditions (< 18 ppt), IPCC Table 4.14 specifies default methane emission:
   // 193.7 kg CH4 / ha / yr * 28 GWP-100 = 5.42 tCO2e / ha / yr deduction.
+  let salinity: number;
   if (input.salinityPpt == null) {
+    if (isStrict) {
+      throw new Error(
+        "Strict Verification Error: Measured salinity (ppt) is required for formal verification to evaluate methane emissions.",
+      );
+    }
     defaultInputsApplied.push("salinity_coastal_marine_default_25_ppt");
+    salinity = 25;
+  } else {
+    const sal = Number(input.salinityPpt);
+    if (Number.isNaN(sal) || sal < 0) {
+      throw new Error(
+        `Invalid salinity: ${input.salinityPpt}. Salinity must be a non-negative number in parts per thousand (ppt).`,
+      );
+    }
+    salinity = sal;
   }
-  const salinity = input.salinityPpt ?? 25;
+
   let ghgEmissions = 0;
   if (salinity < 18) {
     ghgEmissions = area * 5.42 * durationYears;
@@ -250,38 +331,60 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
 
   // 5. Non-Permanence Risk Buffer Pool (Verra AFOLU Risk Tool: Mandatory 15% withholding for reversal insurance)
   const nonPermanenceBufferRate = 0.15;
-  const riskBufferTco2e =
-    (grossSequestration - ghgEmissions - leakageTco2e) * nonPermanenceBufferRate;
+  const grossAfterDeductions = Math.max(0, grossSequestration - ghgEmissions - leakageTco2e);
+  const riskBufferTco2e = grossAfterDeductions * nonPermanenceBufferRate;
 
   // 6. Scientific Uncertainty Discount Factor
   // Tier 1 defaults carry a 10% conservative discount.
-  // Tier 2 site samples carry 3% discount ONLY if supporting site-sampling evidence is substantiated.
-  // Tier 3 soil cores carry 1% discount ONLY if at least 2 independent soil core / lab evidence items are provided.
+  // Tier 2 site samples carry 5% discount (ground-truthed sampling or allometric survey).
+  // Tier 3 soil cores carry 3% discount (continuous soil cores + allometric survey).
   let effectiveTier = input.tier ?? "TIER_1_DEFAULTS";
-  const evidenceCount = input.tierSupportingEvidence?.length ?? 0;
+  const structuredItems = input.structuredEvidence ?? [];
+  const verifiedStructuredItems = structuredItems.filter(
+    (item) => item.verificationStatus === "VERIFIED",
+  );
+  const legacyEvidenceCount = input.tierSupportingEvidence?.length ?? 0;
+  const evidenceTypesPresent: EvidenceType[] = verifiedStructuredItems.map((e) => e.type);
 
-  if (effectiveTier === "TIER_2_SITE_CALIBRATED" && evidenceCount < 1) {
+  let hasTier2Evidence = false;
+  let hasTier3Evidence = false;
+
+  if (verifiedStructuredItems.length > 0) {
+    hasTier2Evidence =
+      evidenceTypesPresent.includes("GROUND_TRUTH_SAMPLING") ||
+      evidenceTypesPresent.includes("ALLOMETRIC_GROWTH_SURVEY");
+    hasTier3Evidence =
+      evidenceTypesPresent.includes("SOIL_CORE_ORGANIC_CARBON_ASSAY") &&
+      evidenceTypesPresent.includes("ALLOMETRIC_GROWTH_SURVEY");
+  } else {
+    // Fallback support for legacy string arrays
+    hasTier2Evidence = legacyEvidenceCount >= 1;
+    hasTier3Evidence = legacyEvidenceCount >= 2;
+  }
+
+  if (effectiveTier === "TIER_3_SOIL_CORES" && !hasTier3Evidence) {
+    effectiveTier = "TIER_1_DEFAULTS";
+    defaultInputsApplied.push(
+      "tier_downgraded_to_tier_1_missing_tier_3_soil_core_and_allometric_evidence",
+    );
+  } else if (effectiveTier === "TIER_2_SITE_CALIBRATED" && !hasTier2Evidence) {
     effectiveTier = "TIER_1_DEFAULTS";
     defaultInputsApplied.push("tier_downgraded_to_tier_1_missing_tier_2_sampling_evidence");
-  } else if (effectiveTier === "TIER_3_SOIL_CORES" && evidenceCount < 2) {
-    effectiveTier = "TIER_1_DEFAULTS";
-    defaultInputsApplied.push("tier_downgraded_to_tier_1_missing_tier_3_soil_core_evidence");
   }
 
   const uncertaintyRate =
     effectiveTier === "TIER_3_SOIL_CORES"
-      ? 0.01
+      ? 0.03
       : effectiveTier === "TIER_2_SITE_CALIBRATED"
-        ? 0.03
+        ? 0.05
         : 0.1;
-  const uncertaintyTco2e =
-    (grossSequestration - ghgEmissions - leakageTco2e - riskBufferTco2e) * uncertaintyRate;
+  const uncertaintyTco2e = (grossAfterDeductions - riskBufferTco2e) * uncertaintyRate;
 
   // Net Model Estimated Carbon Impact
-  const netImpact = Math.max(
-    0,
-    grossSequestration - ghgEmissions - leakageTco2e - riskBufferTco2e - uncertaintyTco2e,
-  );
+  const netImpact = Math.max(0, grossAfterDeductions - riskBufferTco2e - uncertaintyTco2e);
+
+  const grossMinusEmissionsAndLeakage = Math.round(grossAfterDeductions * 100) / 100;
+  const netModelEstimate = Math.round(netImpact);
 
   return {
     methodologyId: METHODOLOGY_SPEC.id,
@@ -305,12 +408,22 @@ export function calculateScientificCarbon(input: CarbonCalculationInput): Detail
     leakageDeductionTco2e: Math.round(leakageTco2e * 100) / 100,
     riskBufferDeductionTco2e: Math.round(riskBufferTco2e * 100) / 100,
     uncertaintyDiscountTco2e: Math.round(uncertaintyTco2e * 100) / 100,
+    uncertaintyRate,
 
-    netEstimatedTco2e: Math.round(grossSequestration - ghgEmissions - leakageTco2e),
-    netVerifiedTco2e: Math.round(netImpact),
+    grossMinusEmissionsAndLeakageTco2e: grossMinusEmissionsAndLeakage,
+    netEstimatedTco2e: grossMinusEmissionsAndLeakage,
+    netModelEstimateTco2e: netModelEstimate,
+    netVerifiedTco2e: netModelEstimate,
 
     citation: params.sourceCitation,
     unaccreditedDisclaimer: METHODOLOGY_SPEC.disclaimer,
     defaultInputsApplied,
+    evidenceAuditTrail: {
+      tierRequested: input.tier ?? "TIER_1_DEFAULTS",
+      tierAssigned: effectiveTier,
+      evidenceCount: verifiedStructuredItems.length || legacyEvidenceCount,
+      evidenceTypes: evidenceTypesPresent,
+      requiredEvidenceMet: effectiveTier === (input.tier ?? "TIER_1_DEFAULTS"),
+    },
   };
 }
