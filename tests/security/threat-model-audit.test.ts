@@ -188,6 +188,44 @@ test("Threat Model: illegal state transition — cannot start review on project 
   }, /Cannot begin review: Project status is 'DRAFT'/i);
 });
 
+test("Threat Model: startReview strictly rejects unauthorized biome before review can begin", async () => {
+  const client = createMockSupabase({ projectStatus: "SUBMITTED" });
+  const originalFrom = client.from;
+  client.from = (table: string) => {
+    if (table === "enrolled_verifiers") {
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: {
+                verifier_id: VERIFIER_USER_ID,
+                status: "ACTIVE",
+                authorized_biomes: ["SEAGRASS"],
+                accreditation_expires_at: "2030-12-31T23:59:59Z",
+              },
+              error: null,
+            }),
+          }),
+        }),
+      };
+    }
+    return originalFrom(table);
+  };
+
+  await assert.rejects(
+    async () => {
+      await startReview({
+        supabase: client,
+        projectId: PROJECT_ID,
+        userId: VERIFIER_USER_ID,
+        verifierEmail: "verifier@nccr.gov.in",
+      });
+    },
+    /is not accredited for biome 'Mangrove'\. Authorized biomes: SEAGRASS/,
+    "startReview must fail-closed if verifier lacks biome authorization",
+  );
+});
+
 test("Threat Model: input validation — rejects negative or NaN carbon values", async () => {
   const client = createMockSupabase({ projectStatus: "UNDER_REVIEW" });
 
