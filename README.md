@@ -8,6 +8,11 @@
 ![Code Style](https://img.shields.io/badge/code%20style-prettier-ff69b4)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
+[![Stars](https://img.shields.io/github/stars/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/stargazers)
+[![Forks](https://img.shields.io/github/forks/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/network/members)
+[![Open Issues](https://img.shields.io/github/issues/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/commits/main)
+
 > **Trusted Monitoring, Reporting & Verification (MRV) for India's Blue Carbon Ecosystems**
 >
 > A production-quality MVP aligned with the Ministry of Earth Sciences (MoES) problem statement — _"Blockchain-Based Blue Carbon Registry and MRV System"_. The system creates an end-to-end digital workflow: field evidence capture → automated validation → human/NCCR verifier review → immutable blockchain anchoring → verified carbon impact calculation.
@@ -116,6 +121,29 @@ To maintain full transparency, the matrix below details the operational status o
 ---
 
 # Part 2: Technical Architecture & Onboarding
+
+## End-to-end evidence lifecycle
+
+```mermaid
+flowchart TD
+    O["Project owner"] --> U["Submit field evidence and project boundary"]
+    U --> V["Evidence validation and SHA-256 binding"]
+    V --> G["Geospatial and project-scope checks"]
+    G --> DB[("PostgreSQL with RLS")]
+    DB --> R["Authorised verifier review"]
+    R -->|Correction requested| U
+    R -->|Rejected| X["Rejected with recorded reason"]
+    R -->|Verified| TX["Atomic state update + transactional outbox"]
+    TX --> W["Outbox worker"]
+    W --> C["BlueCarbonRegistry EVM contract"]
+    C --> Q["Transaction receipt verification"]
+    Q --> F["Verified registry record"]
+    DB --> M["Carbon methodology engine"]
+    M --> F
+    F --> P["Public transparency view"]
+```
+
+The flow separates evidence submission, human verification, transactional state changes, and blockchain anchoring. The project-status matrix below identifies which adjacent capabilities are implemented, configurable, or demonstration-only.
 
 ## System Architecture
 
