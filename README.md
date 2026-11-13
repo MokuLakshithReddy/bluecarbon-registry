@@ -22,6 +22,32 @@
 
 ---
 
+## Visual workflow: from field evidence to reviewed MRV record
+
+```mermaid
+flowchart TD
+    A["Field observations and geospatial evidence"] --> B["Evidence upload and provenance checks"]
+    B --> C["Scientific validation and carbon calculations"]
+    C --> D["Human / verifier review"]
+    D -->|Accepted| E["Anchor approved record"]
+    D -->|Needs revision| F["Return evidence for correction"]
+    F --> B
+    E --> G["Auditable project and registry record"]
+```
+
+### Scientific validation snapshot
+
+| Evaluation set | Sites | Gross-rate MAPE | Interpretation |
+|---|---:|---:|---|
+| In-sample calibration | 3 | **4.1%** | Within the stated calibration criterion |
+| Held-out ecological stress test | 2 | **31.6%** | High divergence; generalization is not established |
+
+The held-out result is a key limitation, not a footnote: the report concludes that generic regional defaults are insufficient for extreme or uncalibrated biomes and that site-specific field assays are required before commercial crediting. This is a **research/MRV software prototype**, not accredited carbon credits or regulatory approval. See the [scientific validation report](docs/SCIENTIFIC_VALIDATION_REPORT.md).
+
+**Why it matters:** creates an auditable chain from field evidence through validation and human review, while making the origin and limitations of calculated carbon estimates visible.
+
+---
+
 ## Table of Contents
 
 - [Part 1: Product & Impact Overview](#part-1-product--impact-overview)
