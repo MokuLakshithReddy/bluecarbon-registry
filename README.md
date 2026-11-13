@@ -1,5 +1,8 @@
 # BlueCarbon Registry
 
+[![Stars](https://img.shields.io/github/stars/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/stargazers) [![Forks](https://img.shields.io/github/forks/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/forks) [![Open Issues](https://img.shields.io/github/issues/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/issues) [![Last Commit](https://img.shields.io/github/last-commit/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/commits/main)
+
+
 [![CI Pipeline](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml)
 [![Branch Protection](https://img.shields.io/badge/branch%20protection-main%20enforced-success)](https://github.com/MokuLakshithReddy/bluecarbon-registry/branches)
 [![Tests Passing](https://img.shields.io/badge/tests-180%20passed-brightgreen)](tests)
