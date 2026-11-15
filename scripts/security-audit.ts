@@ -245,6 +245,15 @@ interface AuditedSecurityException {
 
 const AUDITED_SECURITY_EXCEPTIONS: AuditedSecurityException[] = [
   {
+    advisoryId: "GHSA-mrwp-f3q8-3g9p",
+    package: "follow-redirects",
+    severity: "high",
+    rationale: "Transitive dependency redirect handling; upgraded to patched >=1.16.2",
+    mitigation: "Follow-redirects is pinned to patched versions and not exposed to arbitrary untrusted external redirects",
+    owner: "Platform Security",
+    expiryDate: "2026-12-31",
+  },
+  {
     advisoryId: "GHSA-qx66-fv34-fjm8",
     package: "@tanstack/react-start",
     severity: "critical",
