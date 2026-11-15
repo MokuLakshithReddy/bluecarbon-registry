@@ -249,7 +249,8 @@ const AUDITED_SECURITY_EXCEPTIONS: AuditedSecurityException[] = [
     package: "follow-redirects",
     severity: "high",
     rationale: "Transitive dependency redirect handling; upgraded to patched >=1.16.2",
-    mitigation: "Follow-redirects is pinned to patched versions and not exposed to arbitrary untrusted external redirects",
+    mitigation:
+      "Follow-redirects is pinned to patched versions and not exposed to arbitrary untrusted external redirects",
     owner: "Platform Security",
     expiryDate: "2026-12-31",
   },
