@@ -1,5 +1,8 @@
 # BlueCarbon Registry
 
+[![Stars](https://img.shields.io/github/stars/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/stargazers) [![Forks](https://img.shields.io/github/forks/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/forks) [![Open Issues](https://img.shields.io/github/issues/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/issues) [![Last Commit](https://img.shields.io/github/last-commit/MokuLakshithReddy/bluecarbon-registry?style=flat-square)](https://github.com/MokuLakshithReddy/bluecarbon-registry/commits/main)
+
+
 [![CI Pipeline](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/MokuLakshithReddy/bluecarbon-registry/actions/workflows/ci.yml)
 [![Branch Protection](https://img.shields.io/badge/branch%20protection-main%20enforced-success)](https://github.com/MokuLakshithReddy/bluecarbon-registry/branches)
 [![Tests Passing](https://img.shields.io/badge/tests-180%20passed-brightgreen)](tests)
@@ -24,6 +27,32 @@
 >
 > - **Pre-Review Research Status:** The BlueCarbon Registry is an advanced research and MRV software prototype developed in alignment with the Ministry of Earth Sciences (MoES) problem statement. The underlying methodology cites IPCC (2013) Wetlands Supplement and Verra VM0033 standards as computational design targets; **it has not yet received formal external scientific review, regulatory approval, or accreditation by an independent Validation and Verification Body (VVB).**
 > - **Preliminary Modeled Projections:** All carbon quantification figures ($\text{tCO}_2\text{e}$), risk buffer withholdings, uncertainty tiers, and on-chain records represent preliminary algorithmic model outputs. They do **not** constitute regulatory carbon credits or bankable financial assets. Real commercial or compliance issuance requires formal site-specific empirical calibration and on-site audit by an accredited third-party VVB.
+
+---
+
+## Visual workflow: from field evidence to reviewed MRV record
+
+```mermaid
+flowchart TD
+    A["Field observations and geospatial evidence"] --> B["Evidence upload and provenance checks"]
+    B --> C["Scientific validation and carbon calculations"]
+    C --> D["Human / verifier review"]
+    D -->|Accepted| E["Anchor approved record"]
+    D -->|Needs revision| F["Return evidence for correction"]
+    F --> B
+    E --> G["Auditable project and registry record"]
+```
+
+### Scientific validation snapshot
+
+| Evaluation set | Sites | Gross-rate MAPE | Interpretation |
+|---|---:|---:|---|
+| In-sample calibration | 3 | **4.1%** | Within the stated calibration criterion |
+| Held-out ecological stress test | 2 | **31.6%** | High divergence; generalization is not established |
+
+The held-out result is a key limitation, not a footnote: the report concludes that generic regional defaults are insufficient for extreme or uncalibrated biomes and that site-specific field assays are required before commercial crediting. This is a **research/MRV software prototype**, not accredited carbon credits or regulatory approval. See the [scientific validation report](docs/SCIENTIFIC_VALIDATION_REPORT.md).
+
+**Why it matters:** creates an auditable chain from field evidence through validation and human review, while making the origin and limitations of calculated carbon estimates visible.
 
 ---
 
